@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart VELP - YouTube 解析</title>
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Smart VELP</h1>
+        <p class="subtitle">Video English Learning Platform (V1.1)</p>
+        
+        <div class="input-section">
+            <input type="text" id="youtubeUrl" placeholder="粘贴 YouTube 视频链接..." />
+            <button id="submitBtn">开始解析</button>
+        </div>
+
+        <div id="statusSection" class="hidden">
+            <p id="statusText">正在处理...</p>
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+</body>
+</html>
