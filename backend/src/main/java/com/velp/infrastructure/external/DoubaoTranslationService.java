@@ -35,14 +35,19 @@ public class DoubaoTranslationService implements TranslationService {
     @Value("${velp.llm.doubao.model:}")
     private String model;
 
+    @Value("${velp.llm.request-timeout-seconds:20}")
+    private int requestTimeoutSeconds;
+
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final TranslationResponseParser responseParser;
 
-    public DoubaoTranslationService(ObjectMapper objectMapper) {
+    public DoubaoTranslationService(ObjectMapper objectMapper, TranslationResponseParser responseParser) {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(15))
                 .build();
         this.objectMapper = objectMapper;
+        this.responseParser = responseParser;
     }
 
     @Override
@@ -52,7 +57,9 @@ public class DoubaoTranslationService implements TranslationService {
 
     @Override
     public void translate(List<SubtitleLine> subtitles, java.util.function.Consumer<Integer> progressCallback) {
-        if (!enabled || apiKey == null || apiKey.isEmpty()) return;
+        if (!enabled || apiKey == null || apiKey.isEmpty() || baseUrl == null || baseUrl.isEmpty()) {
+            throw new IllegalStateException("Doubao provider disabled or missing configuration");
+        }
 
         List<SubtitleLine> linesToTranslate = subtitles.stream()
                 .filter(s -> (s.getCn() == null || s.getCn().isEmpty()) && s.getEn() != null)
@@ -63,27 +70,22 @@ public class DoubaoTranslationService implements TranslationService {
             return;
         }
 
-        int batchSize = 15;
-        for (int i = 0; i < linesToTranslate.size(); i += batchSize) {
-            int end = Math.min(i + batchSize, linesToTranslate.size());
-            List<SubtitleLine> batch = linesToTranslate.subList(i, end);
-            try {
-                translateBatch(batch);
-                if (progressCallback != null) {
-                    int progress = (int) (((double) end / linesToTranslate.size()) * 100);
-                    progressCallback.accept(progress);
-                }
-            } catch (Exception e) {
-                log.error("Doubao batch translation failed", e);
-                throw new RuntimeException("Doubao Translation error: " + e.getMessage());
+        try {
+            translateBatch(linesToTranslate);
+            if (progressCallback != null) {
+                progressCallback.accept(100);
             }
+        } catch (Exception e) {
+            log.error("Doubao translation failed", e);
+            throw new RuntimeException("Doubao Translation error: " + e.getMessage());
         }
     }
 
     private void translateBatch(List<SubtitleLine> batch) throws Exception {
-        String contentToTranslate = batch.stream()
+        List<String> englishLines = batch.stream()
                 .map(SubtitleLine::getEn)
-                .collect(Collectors.joining("\n"));
+                .collect(Collectors.toList());
+        String inputJson = objectMapper.writeValueAsString(englishLines);
 
         ObjectNode requestBody = objectMapper.createObjectNode();
         requestBody.put("model", model);
@@ -95,7 +97,7 @@ public class DoubaoTranslationService implements TranslationService {
         ArrayNode contentArray = userMessage.putArray("content");
         contentArray.addObject()
                 .put("type", AppConstants.Translation.TYPE_INPUT_TEXT)
-                .put("text", "Translate these English lines to Chinese. Output ONLY a JSON array of strings, where each string is the translation of the corresponding line. No explanation, no markdown blocks, just the raw JSON array. Lines to translate:\n" + contentToTranslate);
+                .put("text", "Translate these English lines to Simplified Chinese. Output ONLY a JSON array of strings with the same length as the input array. No explanation, no markdown blocks. Input JSON array:\n" + inputJson);
 
         String requestJson = objectMapper.writeValueAsString(requestBody);
 
@@ -103,6 +105,7 @@ public class DoubaoTranslationService implements TranslationService {
                 .uri(URI.create(baseUrl))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + apiKey)
+                .timeout(Duration.ofSeconds(requestTimeoutSeconds))
                 .POST(HttpRequest.BodyPublishers.ofString(requestJson))
                 .build();
 
@@ -134,30 +137,10 @@ public class DoubaoTranslationService implements TranslationService {
             }
 
             if (resultText != null && !resultText.isEmpty()) {
-                // Remove potential markdown code blocks if the model included them
-                String jsonContent = resultText.trim();
-                if (jsonContent.startsWith("```")) {
-                    jsonContent = jsonContent.replaceAll("```(json)?", "").replaceAll("```", "").trim();
-                }
-
-                try {
-                    JsonNode translatedArray = objectMapper.readTree(jsonContent);
-                    if (translatedArray.isArray()) {
-                        int limit = Math.min(batch.size(), translatedArray.size());
-                        for (int j = 0; j < limit; j++) {
-                            batch.get(j).setCn(translatedArray.get(j).asText().trim());
-                        }
-                    } else {
-                        throw new Exception("Response is not a JSON array: " + jsonContent);
-                    }
-                } catch (Exception e) {
-                    log.warn("Failed to parse JSON array from Doubao, falling back to line-by-line: {}", resultText);
-                    // Fallback to line-by-line if JSON parsing fails
-                    String[] translatedLines = resultText.split("\n");
-                    int limit = Math.min(batch.size(), translatedLines.length);
-                    for (int j = 0; j < limit; j++) {
-                        batch.get(j).setCn(translatedLines[j].trim());
-                    }
+                List<String> translations = responseParser.parseAndNormalize(resultText, batch.size(), AppConstants.Translation.PROVIDER_DOUBAO);
+                for (int j = 0; j < translations.size(); j++) {
+                    String translated = translations.get(j);
+                    batch.get(j).setCn(translated == null ? "" : translated.trim());
                 }
             } else {
                 throw new Exception("Unexpected Doubao response structure: " + response.body());

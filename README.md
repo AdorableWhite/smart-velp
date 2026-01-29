@@ -20,7 +20,7 @@ Smart VELP 是一个基于 AI 的 YouTube 视频学习平台，旨在通过自�
 ## 🛠 使用方法介绍
 
 ### 1. 环境准备
-*   **后端**: JDK 21, Maven, Python 3, yt-dlp。
+*   **后端**: JDK 17+, Maven, Python 3, yt-dlp。
 *   **前端**: Node.js 20+ (Vite)。
 *   **API Key**: 需要 [火山引擎 Ark 平台](https://www.volcengine.com/product/ark) 的 API Key 和推理接入点 ID。
 
@@ -37,6 +37,20 @@ Smart VELP 是一个基于 AI 的 YouTube 视频学习平台，旨在通过自�
 2. 安装依赖：`npm install`。
 3. 启动：`npm run dev`。
 4. 访问：`http://localhost:5173`。
+
+#### 跨平台启动脚本 (Windows/macOS/Linux)
+项目内置脚本可自动处理 Maven 缺失的问题（优先使用系统 Maven，否则解压根目录的 `apache-maven-3.9.6-bin.tar.gz`）。
+
+- 后端：
+  - Windows：`powershell -ExecutionPolicy Bypass -File scripts/start-backend.ps1`
+  - macOS/Linux：`bash scripts/start-backend.sh`
+- 前端：
+  - Windows：`powershell -ExecutionPolicy Bypass -File scripts/start-frontend.ps1`
+  - macOS/Linux：`bash scripts/start-frontend.sh`
+
+如需指定命令路径，可设置环境变量：
+- `VELP_YTDLP_PATH`（Windows 可指向 `yt-dlp.exe`）
+- `VELP_PYTHON_PATH`（macOS/Linux 通常是 `python3`）
 
 ### 3. 操作流程
 1. **提交任务**: 在页面顶部的输入框粘贴 YouTube 视频链接，点击“开始解析”。

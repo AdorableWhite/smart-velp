@@ -28,6 +28,7 @@ application-local.properties
 .env.local
 
 # Project specific
+.tools/
 backend/downloads/
 frontend/node_modules/
 frontend/frontend.log

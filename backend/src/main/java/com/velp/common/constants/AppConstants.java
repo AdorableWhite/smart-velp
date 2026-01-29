@@ -14,8 +14,11 @@ public final class AppConstants {
     public static final class Translation {
         public static final String PROVIDER_DOUBAO = "doubao";
         public static final String PROVIDER_DEEPSEEK = "deepseek";
+        public static final String PROVIDER_LLM = "llm";
+        public static final String PROVIDER_OPENAI = "openai";
         public static final String SERVICE_DOUBAO = "doubaoTranslationService";
         public static final String SERVICE_DEEPSEEK = "deepseekTranslationService";
+        public static final String SERVICE_LLM = "llmTranslationService";
         
         public static final String ROLE_USER = "user";
         public static final String ROLE_SYSTEM = "system";

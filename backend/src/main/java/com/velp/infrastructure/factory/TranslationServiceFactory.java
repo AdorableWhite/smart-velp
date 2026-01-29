@@ -15,11 +15,20 @@ public class TranslationServiceFactory {
     }
 
     public TranslationService getService(String provider) {
-        if (AppConstants.Translation.PROVIDER_DOUBAO.equalsIgnoreCase(provider)) {
+        if (provider == null || provider.trim().isEmpty()) {
+            return null;
+        }
+        String normalized = provider.trim().toLowerCase();
+        if (AppConstants.Translation.PROVIDER_DOUBAO.equalsIgnoreCase(normalized)) {
             return context.getBean(AppConstants.Translation.SERVICE_DOUBAO, TranslationService.class);
-        } else {
-            // Default to DeepSeek
+        }
+        if (AppConstants.Translation.PROVIDER_DEEPSEEK.equalsIgnoreCase(normalized)) {
             return context.getBean(AppConstants.Translation.SERVICE_DEEPSEEK, TranslationService.class);
         }
+        if (AppConstants.Translation.PROVIDER_OPENAI.equalsIgnoreCase(normalized)
+                || AppConstants.Translation.PROVIDER_LLM.equalsIgnoreCase(normalized)) {
+            return context.getBean(AppConstants.Translation.SERVICE_LLM, TranslationService.class);
+        }
+        return null;
     }
 }

@@ -35,14 +35,19 @@ public class DeepSeekTranslationService implements TranslationService {
     @Value("${velp.llm.deepseek.model:}")
     private String model;
 
+    @Value("${velp.llm.request-timeout-seconds:20}")
+    private int requestTimeoutSeconds;
+
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final TranslationResponseParser responseParser;
 
-    public DeepSeekTranslationService(ObjectMapper objectMapper) {
+    public DeepSeekTranslationService(ObjectMapper objectMapper, TranslationResponseParser responseParser) {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
         this.objectMapper = objectMapper;
+        this.responseParser = responseParser;
     }
 
     @Override
@@ -52,7 +57,9 @@ public class DeepSeekTranslationService implements TranslationService {
 
     @Override
     public void translate(List<SubtitleLine> subtitles, java.util.function.Consumer<Integer> progressCallback) {
-        if (!enabled || apiKey == null || apiKey.isEmpty()) return;
+        if (!enabled || apiKey == null || apiKey.isEmpty() || baseUrl == null || baseUrl.isEmpty()) {
+            throw new IllegalStateException("DeepSeek provider disabled or missing configuration");
+        }
 
         List<SubtitleLine> linesToTranslate = subtitles.stream()
                 .filter(s -> (s.getCn() == null || s.getCn().isEmpty()) && s.getEn() != null)
@@ -63,34 +70,33 @@ public class DeepSeekTranslationService implements TranslationService {
             return;
         }
 
-        int batchSize = 20;
-        for (int i = 0; i < linesToTranslate.size(); i += batchSize) {
-            int end = Math.min(i + batchSize, linesToTranslate.size());
-            List<SubtitleLine> batch = linesToTranslate.subList(i, end);
-            try {
-                translateBatch(batch);
-                if (progressCallback != null) {
-                    int progress = (int) (((double) end / linesToTranslate.size()) * 100);
-                    progressCallback.accept(progress);
-                }
-            } catch (Exception e) {
-                log.error("DeepSeek batch translation failed", e);
-                throw new RuntimeException("DeepSeek Translation error: " + e.getMessage());
+        try {
+            translateBatch(linesToTranslate);
+            if (progressCallback != null) {
+                progressCallback.accept(100);
             }
+        } catch (Exception e) {
+            log.error("DeepSeek translation failed", e);
+            throw new RuntimeException("DeepSeek Translation error: " + e.getMessage());
         }
     }
 
     private void translateBatch(List<SubtitleLine> batch) throws Exception {
-        String contentToTranslate = batch.stream()
+        List<String> englishLines = batch.stream()
                 .map(SubtitleLine::getEn)
-                .collect(Collectors.joining("\n"));
+                .collect(Collectors.toList());
+        String inputJson = objectMapper.writeValueAsString(englishLines);
 
         ObjectNode requestBody = objectMapper.createObjectNode();
         requestBody.put("model", model);
         
         ArrayNode messages = requestBody.putArray("messages");
-        messages.addObject().put("role", AppConstants.Translation.ROLE_SYSTEM).put("content", "You are a professional subtitle translator. Translate English to Chinese. One line per line.");
-        messages.addObject().put("role", AppConstants.Translation.ROLE_USER).put("content", contentToTranslate);
+        messages.addObject()
+                .put("role", AppConstants.Translation.ROLE_SYSTEM)
+                .put("content", "You are a professional subtitle translator. Translate English to Simplified Chinese. Output ONLY a JSON array of strings with the same length as the input array. No markdown, no explanation.");
+        messages.addObject()
+                .put("role", AppConstants.Translation.ROLE_USER)
+                .put("content", inputJson);
 
         String requestJson = objectMapper.writeValueAsString(requestBody);
 
@@ -98,6 +104,7 @@ public class DeepSeekTranslationService implements TranslationService {
                 .uri(URI.create(baseUrl))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + apiKey)
+                .timeout(Duration.ofSeconds(requestTimeoutSeconds))
                 .POST(HttpRequest.BodyPublishers.ofString(requestJson))
                 .build();
 
@@ -108,10 +115,10 @@ public class DeepSeekTranslationService implements TranslationService {
             JsonNode choices = root.path("choices");
             if (choices.isArray() && choices.size() > 0) {
                 String content = choices.path(0).path("message").path("content").asText();
-                String[] translatedLines = content.split("\n");
-                int loopLimit = Math.min(batch.size(), translatedLines.length);
-                for (int j = 0; j < loopLimit; j++) {
-                    batch.get(j).setCn(translatedLines[j].trim());
+                List<String> translations = responseParser.parseAndNormalize(content, batch.size(), AppConstants.Translation.PROVIDER_DEEPSEEK);
+                for (int j = 0; j < translations.size(); j++) {
+                    String translated = translations.get(j);
+                    batch.get(j).setCn(translated == null ? "" : translated.trim());
                 }
             } else {
                 throw new Exception("Unexpected DeepSeek response structure: " + response.body());
