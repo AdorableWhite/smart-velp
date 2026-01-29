@@ -20,15 +20,6 @@ public class YtDlpClient {
     @Value("${velp.ytdlp.path:yt-dlp}")
     private String ytDlpPath;
 
-    private static final String[] IMPERSONATE_TARGETS = {
-            "chrome", "edge", "safari", "firefox", "ios", "android"
-    };
-    private final java.util.Random random = new java.util.Random();
-
-    private String getRandomImpersonate() {
-        return IMPERSONATE_TARGETS[random.nextInt(IMPERSONATE_TARGETS.length)];
-    }
-
     @PostConstruct
     public void init() {
         try {
@@ -52,8 +43,6 @@ public class YtDlpClient {
             command.add("--no-check-certificates");
             command.add("--extractor-args");
             command.add(AppConstants.YtDlp.EXTRACTOR_ARGS_YT);
-            command.add("--impersonate-client");
-            command.add(getRandomImpersonate());
             command.add(url);
 
             ProcessBuilder pb = new ProcessBuilder(command);
@@ -88,8 +77,6 @@ public class YtDlpClient {
         command.add("--force-overwrites");
         command.add("--extractor-args");
         command.add(AppConstants.YtDlp.EXTRACTOR_ARGS_YT);
-        command.add("--impersonate-client");
-        command.add(getRandomImpersonate());
         command.add("--referer");
         command.add(AppConstants.YtDlp.REFERER_YT);
         command.add("--output");
