@@ -19,6 +19,30 @@ public class YtDlpClient {
     @Value("${velp.ytdlp.path:yt-dlp}")
     private String ytDlpPath;
 
+    public String getVideoTitle(String url) {
+        try {
+            List<String> command = new ArrayList<>();
+            command.add(ytDlpPath);
+            command.add("--get-title");
+            command.add("--no-playlist");
+            command.add("--ignore-errors");
+            command.add(url);
+
+            ProcessBuilder pb = new ProcessBuilder(command);
+            Process process = pb.start();
+
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String title = reader.readLine();
+                if (title != null && !title.isEmpty()) {
+                    return title;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to get video title for {}: {}", url, e.getMessage());
+        }
+        return "Unknown Video";
+    }
+
     public void downloadVideo(String url, String outputTemplate, java.util.function.Consumer<Integer> progressCallback) throws IOException, InterruptedException {
         List<String> command = new ArrayList<>();
         command.add(ytDlpPath);

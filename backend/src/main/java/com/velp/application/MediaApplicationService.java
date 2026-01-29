@@ -51,16 +51,17 @@ public class MediaApplicationService {
         }
 
         String taskId = UUID.randomUUID().toString();
-        mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PENDING, 0, null, null, url);
+        String videoTitle = ytDlpClient.getVideoTitle(url);
+        mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PENDING, 0, null, null, url, videoTitle);
         
-        processVideoAsync(taskId, url);
+        processVideoAsync(taskId, url, videoTitle);
         
         return taskId;
     }
 
     public MediaRepository.TaskStatus getTaskStatus(String taskId) {
         return mediaRepository.getTaskStatus(taskId)
-                .orElse(new MediaRepository.TaskStatus(AppConstants.TaskStatus.FAILED, 0, null, "Task not found", ""));
+                .orElse(new MediaRepository.TaskStatus(AppConstants.TaskStatus.FAILED, 0, null, "Task not found", "", ""));
     }
 
     public List<MediaRepository.TaskEntry> getAllTasks() {
@@ -92,13 +93,23 @@ public class MediaApplicationService {
         List<SubtitleLineDto> dtos = subtitles.stream()
                 .map(s -> new SubtitleLineDto(s.getStartTime(), s.getEndTime(), s.getEn(), s.getCn()))
                 .collect(Collectors.toList());
+        
+        // Get title from repository if available
+        String title = "YouTube Video";
+        List<MediaRepository.TaskEntry> allTasks = mediaRepository.getAllTasks();
+        for (MediaRepository.TaskEntry t : allTasks) {
+            if (videoId.equals(t.videoId())) {
+                title = t.title();
+                break;
+            }
+        }
 
-        return new CourseDetailResponse("YouTube Video", "/downloads/" + videoId + "/" + videoFileName, dtos);
+        return new CourseDetailResponse(title, "/downloads/" + videoId + "/" + videoFileName, dtos);
     }
 
     @Async
-    public void processVideoAsync(String taskId, String url) {
-        mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, 10, null, AppConstants.Messages.INIT, url);
+    public void processVideoAsync(String taskId, String url, String title) {
+        mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, 10, null, AppConstants.Messages.INIT, url, title);
 
         String videoId = UUID.randomUUID().toString();
         File outputDir = new File(storagePath, videoId);
@@ -107,28 +118,28 @@ public class MediaApplicationService {
         }
 
         try {
-            mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, 20, null, AppConstants.Messages.DOWNLOADING_YT, url);
+            mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, 20, null, AppConstants.Messages.DOWNLOADING_YT, url, title);
             String outputTemplate = new File(outputDir, AppConstants.YtDlp.OUTPUT_TEMPLATE_BASE).getAbsolutePath();
             ytDlpClient.downloadVideo(url, outputTemplate, (progress) -> {
                 // Map yt-dlp progress (0-80) to task progress (20-70)
                 int taskProgress = 20 + (progress * 50 / 100);
-                mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, taskProgress, null, AppConstants.Messages.DOWNLOADING_PROGRESS + progress + "%", url);
+                mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, taskProgress, null, AppConstants.Messages.DOWNLOADING_PROGRESS + progress + "%", url, title);
             });
 
-            mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, 75, null, AppConstants.Messages.PARSING_SUBS, url);
+            mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, 75, null, AppConstants.Messages.PARSING_SUBS, url, title);
             
             // Process Subtitles
-            processSubtitles(taskId, outputDir, url);
+            processSubtitles(taskId, outputDir, url, title);
 
-            mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.COMPLETED, 100, videoId, AppConstants.Messages.PARSE_COMPLETE, url);
+            mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.COMPLETED, 100, videoId, AppConstants.Messages.PARSE_COMPLETE, url, title);
 
         } catch (Exception e) {
             log.error("Task {} failed", taskId, e);
-            mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.FAILED, 0, null, "错误: " + e.getMessage(), url);
+            mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.FAILED, 0, null, "错误: " + e.getMessage(), url, title);
         }
     }
 
-    private void processSubtitles(String taskId, File outputDir, String url) throws IOException {
+    private void processSubtitles(String taskId, File outputDir, String url, String title) throws IOException {
         File[] vttFiles = outputDir.listFiles((dir, name) -> name.endsWith(AppConstants.Storage.VTT_EXT));
         List<SubtitleLine> finalSubs = new ArrayList<>();
 
@@ -155,17 +166,17 @@ public class MediaApplicationService {
         boolean needsTranslation = finalSubs.stream().anyMatch(s -> (s.getCn() == null || s.getCn().isEmpty()) && s.getEn() != null);
         
         if (needsTranslation) {
-            mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, 80, null, AppConstants.Messages.TRANSLATION_STARTED, url);
+            mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, 80, null, AppConstants.Messages.TRANSLATION_STARTED, url, title);
             try {
                 translationService.translate(finalSubs, (progress) -> {
                     // Map translation progress (0-100) to task progress (80-95)
                     int taskProgress = 80 + (progress * 15 / 100);
-                    mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, taskProgress, null, AppConstants.Messages.TRANSLATION_PROGRESS + progress + "%", url);
+                    mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, taskProgress, null, AppConstants.Messages.TRANSLATION_PROGRESS + progress + "%", url, title);
                 });
-                mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, 95, null, AppConstants.Messages.TRANSLATION_COMPLETE, url);
+                mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, 95, null, AppConstants.Messages.TRANSLATION_COMPLETE, url, title);
             } catch (Exception e) {
                 log.warn("Translation failed for task {}: {}", taskId, e.getMessage());
-                mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, 90, null, AppConstants.Messages.TRANSLATION_FAILED, url);
+                mediaRepository.saveTaskStatus(taskId, AppConstants.TaskStatus.PROCESSING, 90, null, AppConstants.Messages.TRANSLATION_FAILED, url, title);
             }
         }
 

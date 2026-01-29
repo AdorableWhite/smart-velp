@@ -82,12 +82,14 @@ function renderTaskList() {
     elements.taskList.innerHTML = state.tasks.map(task => {
         const isCompleted = task.status === 'completed';
         const isActive = state.currentTaskId === task.taskId;
+        const displayTitle = task.title || task.url;
         
         return `
             <div class="task-item status-${task.status} ${isActive ? 'active' : ''}" 
                  data-task-id="${task.taskId}"
+                 title="链接: ${task.url}\n状态: ${getStatusLabel(task.status)}\n进度: ${task.progress || 0}%"
                  style="cursor: ${isCompleted ? 'pointer' : 'not-allowed'}">
-                <div class="task-title" title="${task.url}">${task.url}</div>
+                <div class="task-title" title="${displayTitle}">${displayTitle}</div>
                 <div class="task-status">
                     <span class="status-dot dot-${task.status}"></span>
                     ${getStatusLabel(task.status)} ${task.progress ? `(${task.progress}%)` : ''}
