@@ -1,6 +1,7 @@
 package com.velp.infrastructure.external;
 
 import com.velp.common.constants.AppConstants;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -19,6 +20,28 @@ public class YtDlpClient {
     @Value("${velp.ytdlp.path:yt-dlp}")
     private String ytDlpPath;
 
+    private static final String[] IMPERSONATE_TARGETS = {
+            "chrome", "edge", "safari", "firefox", "ios", "android"
+    };
+    private final java.util.Random random = new java.util.Random();
+
+    private String getRandomImpersonate() {
+        return IMPERSONATE_TARGETS[random.nextInt(IMPERSONATE_TARGETS.length)];
+    }
+
+    @PostConstruct
+    public void init() {
+        try {
+            Process process = new ProcessBuilder(ytDlpPath, "--version").start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String version = reader.readLine();
+                log.info("Initialized YtDlpClient with version: {}", version);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to get yt-dlp version: {}", e.getMessage());
+        }
+    }
+
     public String getVideoTitle(String url) {
         try {
             List<String> command = new ArrayList<>();
@@ -26,6 +49,11 @@ public class YtDlpClient {
             command.add("--get-title");
             command.add("--no-playlist");
             command.add("--ignore-errors");
+            command.add("--no-check-certificates");
+            command.add("--extractor-args");
+            command.add(AppConstants.YtDlp.EXTRACTOR_ARGS_YT);
+            command.add("--impersonate-client");
+            command.add(getRandomImpersonate());
             command.add(url);
 
             ProcessBuilder pb = new ProcessBuilder(command);
@@ -48,7 +76,6 @@ public class YtDlpClient {
         command.add(ytDlpPath);
         command.add("-f");
         command.add(AppConstants.YtDlp.FORMAT_BEST);
-        command.add("--force-ipv4");
         command.add("--write-sub");
         command.add("--write-auto-sub");
         command.add("--sub-lang");
@@ -61,8 +88,8 @@ public class YtDlpClient {
         command.add("--force-overwrites");
         command.add("--extractor-args");
         command.add(AppConstants.YtDlp.EXTRACTOR_ARGS_YT);
-        command.add("--user-agent");
-        command.add("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36");
+        command.add("--impersonate-client");
+        command.add(getRandomImpersonate());
         command.add("--referer");
         command.add(AppConstants.YtDlp.REFERER_YT);
         command.add("--output");
