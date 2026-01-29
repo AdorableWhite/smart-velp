@@ -36,7 +36,7 @@ public final class AppConstants {
     public static final class YtDlp {
         public static final String FORMAT_BEST = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]";
         public static final String SUB_LANGS = "en,zh-Hans,zh-Hant";
-        public static final String EXTRACTOR_ARGS_YT = "youtube:player_client=ios,web";
+        public static final String EXTRACTOR_ARGS_YT = "youtube:player_client=android";
         public static final String REFERER_YT = "https://www.youtube.com/";
         public static final String OUTPUT_TEMPLATE_BASE = "video.%(ext)s";
         public static final String DOWNLOAD_MARK = "[download]";
