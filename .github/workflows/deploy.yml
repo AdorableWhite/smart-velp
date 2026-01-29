@@ -1,81 +1,99 @@
+# 工作流名称：多分支持续集成与部署
 name: Multi-branch CI/CD
 
+# 触发条件：当推送到 master 或 develop 分支时触发
 on:
   push:
     branches:
       - master
       - develop
 
+# 全局环境变量
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME_FE: ${{ github.repository }}-frontend
-  IMAGE_NAME_BE: ${{ github.repository }}-backend
+  REGISTRY: ghcr.io # 使用 GitHub Container Registry 作为镜像仓库
+  IMAGE_NAME_FE: ${{ github.repository }}-frontend # 前端镜像名称，格式通常为：用户名/仓库名-frontend
+  IMAGE_NAME_BE: ${{ github.repository }}-backend # 后端镜像名称，格式通常为：用户名/仓库名-backend
 
 jobs:
+  # 任务一：构建并推送 Docker 镜像
   build-and-push:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # 使用最新的 Ubuntu 环境运行
     permissions:
-      contents: read
-      packages: write
+      contents: read # 允许读取代码内容
+      packages: write # 允许写入 GitHub Packages (推送镜像)
 
     steps:
+      # 1. 检出源代码
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. 登录到 GitHub Container Registry
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ github.actor }} # 使用触发工作流的用户
+          password: ${{ secrets.GITHUB_TOKEN }} # 使用 GitHub 自动生成的 Token
 
+      # 3. 设置镜像标签和元数据
       - name: Set Tag and Metadata
         id: meta
         run: |
+          # 如果是 master 分支，设置 TAG 为 prod，否则设置为 dev
           if [ "${{ github.ref }}" = "refs/heads/master" ]; then
             echo "TAG=prod" >> $GITHUB_ENV
           else
             echo "TAG=dev" >> $GITHUB_ENV
           fi
-          echo "OWNER=${{ github.repository_owner }}" >> $GITHUB_ENV
-          echo "REPO=${{ github.event.repository.name }}" >> $GITHUB_ENV
+          
+          # 设置仓库所有者和名称的环境变量（转为小写）
+          echo "OWNER=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          echo "REPO=$(echo ${{ github.event.repository.name }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
+      # 4. 构建并推送前端镜像
       - name: Build and push Frontend image
         uses: docker/build-push-action@v5
         with:
-          context: ./frontend
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FE }}:${{ env.TAG }}
+          context: ./frontend # 构建上下文为 frontend 目录
+          push: true # 构建完成后自动推送
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FE }}:${{ env.TAG }} # 镜像完整路径和标签
 
+      # 5. 构建并推送后端镜像
       - name: Build and push Backend image
         uses: docker/build-push-action@v5
         with:
-          context: ./backend
+          context: ./backend # 构建上下文为 backend 目录
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BE }}:${{ env.TAG }}
 
+  # 任务二：远程部署
   deploy:
-    needs: build-and-push
+    needs: build-and-push # 只有 build-and-push 任务成功后才执行部署
     runs-on: ubuntu-latest
     steps:
+      # 通过 SSH 远程执行部署命令
       - name: Remote SSH deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
+          host: ${{ secrets.SSH_HOST }} # 服务器 IP（需在 GitHub Secrets 中配置）
+          username: ${{ secrets.SSH_USER }} # 服务器用户名
+          key: ${{ secrets.SSH_KEY }} # 服务器 SSH 私钥
           script: |
-            cd /opt/velp
+            cd /opt/velp # 进入服务器上的项目部署目录
+            
+            # 登录 GitHub Container Registry
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
+            # 在服务器上重复标签设置逻辑
             if [ "${{ github.ref }}" = "refs/heads/master" ]; then
               export TAG=prod
             else
               export TAG=dev
             fi
             
-            export OWNER=${{ github.repository_owner }}
-            export REPO=${{ github.event.repository.name }}
+            export OWNER=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')
+            export REPO=$(echo ${{ github.event.repository.name }} | tr '[:upper:]' '[:lower:]')
             
+            # 拉取最新镜像并使用 docker-compose 启动
             docker compose pull
             docker compose up -d

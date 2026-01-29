@@ -8,7 +8,10 @@ let state = {
     subtitles: [],
     currentSubIndex: -1,
     subMode: 'dual',
-    pollingInterval: null
+    pollingInterval: null,
+    playbackRate: 1.0,
+    isLooping: false,
+    fontSize: 24
 };
 
 // DOM Elements
@@ -23,7 +26,18 @@ const elements = {
     progressFill: document.getElementById('progressFill'),
     mainVideo: document.getElementById('mainVideo'),
     subtitleList: document.getElementById('subtitleList'),
-    subModeSelect: document.getElementById('subModeSelect')
+    subModeSelect: document.getElementById('subModeSelect'),
+    speedSlider: document.getElementById('speedSlider'),
+    speedValue: document.getElementById('speedValue'),
+    loopBtn: document.getElementById('loopBtn'),
+    fullScreenBtn: document.getElementById('fullScreenBtn'),
+    fontSizeSlider: document.getElementById('fontSizeSlider'),
+    fontSizeValue: document.getElementById('fontSizeValue'),
+    speedBtns: document.querySelectorAll('.speed-btn'),
+    videoContainer: document.getElementById('videoContainer'),
+    videoSubtitleOverlay: document.getElementById('videoSubtitleOverlay'),
+    overlayEn: document.querySelector('.overlay-en'),
+    overlayCn: document.querySelector('.overlay-cn')
 };
 
 /**
@@ -35,17 +49,120 @@ function init() {
     elements.subModeSelect.addEventListener('change', (e) => {
         state.subMode = e.target.value;
         renderSubtitles();
+        // Update overlay immediately if visible
+        if (state.currentSubIndex !== -1) {
+            const sub = state.subtitles[state.currentSubIndex];
+            elements.overlayEn.innerText = state.subMode !== 'cn' ? sub.en : '';
+            elements.overlayCn.innerText = state.subMode !== 'en' ? sub.cn : '';
+            if (state.subMode === 'none') {
+                elements.overlayEn.innerText = '';
+                elements.overlayCn.innerText = '';
+            }
+        }
     });
 
     elements.mainVideo.addEventListener('timeupdate', () => {
         syncSubtitles(elements.mainVideo.currentTime);
     });
 
+    // Speed Control Listeners
+    elements.speedBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const speed = parseFloat(btn.dataset.speed);
+            setPlaybackRate(speed);
+        });
+    });
+
+    elements.speedSlider.addEventListener('input', (e) => {
+        const speed = parseFloat(e.target.value);
+        setPlaybackRate(speed, false); // false means don't update slider value to avoid feedback loop
+    });
+
+    // Loop Control Listener
+    elements.loopBtn.addEventListener('click', toggleLoop);
+
+    // Fullscreen Control Listener
+    elements.fullScreenBtn.addEventListener('click', toggleFullScreen);
+
+    // Font Size Control Listener
+    elements.fontSizeSlider.addEventListener('input', (e) => {
+        const size = e.target.value;
+        setFontSize(size);
+    });
+
+    // Fullscreen Change Listener
+    const handleFullscreenChange = () => {
+        const isFullscreen = document.fullscreenElement !== null;
+        if (isFullscreen) {
+            elements.videoSubtitleOverlay.classList.remove('hidden');
+        } else {
+            elements.videoSubtitleOverlay.classList.add('hidden');
+        }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange); // Safari support
+
+    // Set initial font size
+    setFontSize(state.fontSize);
+
     // Initial Load
     loadTasks();
     
     // Auto-refresh task list every 10 seconds
     setInterval(loadTasks, 10000);
+}
+
+/**
+ * Set video playback rate
+ */
+function setPlaybackRate(speed, updateSlider = true) {
+    state.playbackRate = speed;
+    elements.mainVideo.playbackRate = speed;
+    elements.speedValue.innerText = speed.toFixed(1) + 'x';
+    
+    if (updateSlider) {
+        elements.speedSlider.value = speed;
+    }
+
+    // Update active class on buttons
+    elements.speedBtns.forEach(btn => {
+        if (parseFloat(btn.dataset.speed) === speed) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+}
+
+/**
+ * Toggle sentence loop mode
+ */
+function toggleLoop() {
+    state.isLooping = !state.isLooping;
+    elements.loopBtn.classList.toggle('active', state.isLooping);
+}
+
+/**
+ * Toggle custom fullscreen
+ */
+function toggleFullScreen() {
+    if (!document.fullscreenElement) {
+        elements.videoContainer.requestFullscreen().catch(err => {
+            console.error(`无法进入全屏: ${err.message}`);
+        });
+    } else {
+        document.exitFullscreen();
+    }
+}
+
+/**
+ * Set subtitle font size
+ */
+function setFontSize(size) {
+    state.fontSize = size;
+    elements.fontSizeValue.innerText = size + 'px';
+    elements.videoContainer.style.setProperty('--sub-font-size', size + 'px');
 }
 
 /**
@@ -220,6 +337,7 @@ async function loadCourse(videoId) {
         const data = await res.json();
 
         elements.mainVideo.src = data.videoUrl; 
+        elements.mainVideo.playbackRate = state.playbackRate; // Re-apply current speed
         state.subtitles = data.subtitles || [];
         state.currentSubIndex = -1;
         renderSubtitles();
@@ -255,6 +373,16 @@ function renderSubtitles() {
  * Sync subtitle highlighting with video time
  */
 function syncSubtitles(time) {
+    // Handle Looping: if looping is enabled and we passed the current subtitle's end time
+    if (state.isLooping && state.currentSubIndex !== -1) {
+        const currentSub = state.subtitles[state.currentSubIndex];
+        // Add a small buffer (0.1s) to ensure we don't skip the loop due to timeupdate granularity
+        if (time >= currentSub.endTime - 0.1) {
+            elements.mainVideo.currentTime = currentSub.startTime;
+            return;
+        }
+    }
+
     const index = state.subtitles.findIndex(s => time >= s.startTime && time < s.endTime);
     
     if (index !== -1 && index !== state.currentSubIndex) {
@@ -268,6 +396,24 @@ function syncSubtitles(time) {
         }
         
         state.currentSubIndex = index;
+        
+        // Update overlay text if in fullscreen
+        const currentSubData = state.subtitles[index];
+        if (currentSubData) {
+            elements.overlayEn.innerText = state.subMode !== 'cn' ? currentSubData.en : '';
+            elements.overlayCn.innerText = state.subMode !== 'en' ? currentSubData.cn : '';
+            
+            // Handle 'none' mode
+            if (state.subMode === 'none') {
+                elements.overlayEn.innerText = '';
+                elements.overlayCn.innerText = '';
+            }
+        }
+    } else if (index === -1 && state.currentSubIndex !== -1) {
+        // Clear overlay if no subtitle matches current time
+        elements.overlayEn.innerText = '';
+        elements.overlayCn.innerText = '';
+        state.currentSubIndex = -1;
     }
 }
 

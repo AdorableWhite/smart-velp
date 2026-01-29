@@ -210,6 +210,37 @@ button:disabled {
     height: 100%;
 }
 
+/* 隐藏原生视频控制条的全屏按钮，强制用户使用我们的自定义全屏按钮 */
+video::-webkit-media-controls-fullscreen-button {
+    display: none !important;
+}
+video::-internal-media-controls-fullscreen-button {
+    display: none !important;
+}
+
+/* 视频容器全屏状态下的样式适配 */
+#videoContainer:fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+}
+
+#videoContainer:fullscreen video {
+    max-height: 100vh;
+    max-width: 100vw;
+    width: auto;
+    height: auto;
+    margin-bottom: 0;
+}
+
+#videoContainer:fullscreen .video-subtitle-overlay {
+    bottom: 12%;
+    display: block !important;
+}
+
 .video-container {
     flex: 0 0 auto;
     background: #000;
@@ -217,6 +248,49 @@ button:disabled {
     overflow: hidden;
     margin-bottom: 15px;
     max-height: 45vh;
+    position: relative; /* 为字幕叠加层提供定位基准 */
+}
+
+/* 视频内字幕叠加层 */
+.video-subtitle-overlay {
+    position: absolute;
+    bottom: 5%; /* 调低一点，更贴近底部 */
+    left: 0;
+    right: 0;
+    text-align: center;
+    z-index: 2147483647; /* 确保在最顶层 */
+    pointer-events: none;
+    padding: 0 5%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.video-subtitle-overlay .overlay-en {
+    color: #ffffff;
+    font-size: var(--sub-font-size, 24px);
+    font-weight: bold;
+    margin-bottom: 5px;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.9), -1px -1px 0 rgba(0,0,0,0.5);
+    line-height: 1.2;
+}
+
+.video-subtitle-overlay .overlay-cn {
+    color: #ffd700;
+    font-size: calc(var(--sub-font-size, 24px) * 0.85);
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.9), -1px -1px 0 rgba(0,0,0,0.5);
+    line-height: 1.2;
+}
+
+/* 全屏状态下的特定样式 */
+:fullscreen .video-subtitle-overlay {
+    display: block !important;
+}
+
+/* 隐藏逻辑由 JS 控制类名 */
+.video-subtitle-overlay.hidden {
+    display: none;
 }
 
 video {
@@ -226,9 +300,124 @@ video {
 }
 
 .subtitle-controls {
-    padding: 10px 0;
+    padding: 15px 0;
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 10px;
+}
+
+.playback-controls {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex: 1;
+}
+
+.speed-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.speed-control .label {
+    font-size: 0.85rem;
+    color: var(--color-text-sub);
+}
+
+.speed-buttons {
+    display: flex;
+    gap: 5px;
+}
+
+.speed-btn {
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    background: var(--color-white);
+    color: var(--color-text-main);
+    border: 1px solid var(--color-border);
+    min-width: 45px;
+}
+
+.speed-btn:hover {
+    background: var(--color-bg);
+}
+
+.speed-btn.active {
+    background: var(--color-accent);
+    color: white;
+    border-color: var(--color-accent);
+}
+
+#speedSlider {
+    width: 100px;
+    cursor: pointer;
+    accent-color: var(--color-accent);
+}
+
+#speedValue {
+    font-size: 0.85rem;
+    color: var(--color-accent);
+    min-width: 40px;
+}
+
+.loop-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.subtitle-config {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: 20px;
+    padding-left: 20px;
+    border-left: 1px solid var(--color-border);
+}
+
+.subtitle-config .label {
+    font-size: 0.85rem;
+    color: var(--color-text-sub);
+}
+
+#fontSizeSlider {
+    width: 80px;
+    cursor: pointer;
+    accent-color: var(--color-accent);
+}
+
+#fontSizeValue {
+    font-size: 0.85rem;
+    color: var(--color-text-sub);
+    min-width: 35px;
+}
+
+.control-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    font-size: 0.9rem;
+    background: var(--color-white);
+    color: var(--color-text-main);
+    border: 1px solid var(--color-border);
+}
+
+.control-btn:hover {
+    background: var(--color-bg);
+}
+
+.control-btn.active {
+    background: var(--color-secondary);
+    color: white;
+    border-color: var(--color-secondary);
+}
+
+.control-btn .icon {
+    font-size: 1rem;
 }
 
 #subModeSelect {
@@ -237,6 +426,7 @@ video {
     border: 1px solid var(--color-border);
     background: var(--color-white);
     color: var(--color-text-main);
+    height: 32px;
 }
 
 .subtitle-list {
