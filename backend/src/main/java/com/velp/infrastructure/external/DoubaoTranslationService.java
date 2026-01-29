@@ -95,7 +95,7 @@ public class DoubaoTranslationService implements TranslationService {
         ArrayNode contentArray = userMessage.putArray("content");
         contentArray.addObject()
                 .put("type", AppConstants.Translation.TYPE_INPUT_TEXT)
-                .put("text", "Translate these English lines to Chinese. One line per sentence. No extra text:\n" + contentToTranslate);
+                .put("text", "Translate these English lines to Chinese. Output ONLY a JSON array of strings, where each string is the translation of the corresponding line. No explanation, no markdown blocks, just the raw JSON array. Lines to translate:\n" + contentToTranslate);
 
         String requestJson = objectMapper.writeValueAsString(requestBody);
 
@@ -110,14 +110,54 @@ public class DoubaoTranslationService implements TranslationService {
 
         if (response.statusCode() == 200) {
             JsonNode root = objectMapper.readTree(response.body());
-            JsonNode choices = root.path("choices");
-            if (choices.isArray() && choices.size() > 0) {
-                String resultText = choices.path(0).path("message").path("content").asText();
-                
-                String[] translatedLines = resultText.split("\n");
-                int limit = Math.min(batch.size(), translatedLines.length);
-                for (int j = 0; j < limit; j++) {
-                    batch.get(j).setCn(translatedLines[j].trim());
+            
+            // Handle both standard OpenAI structure and Doubao-specific structure
+            String resultText = "";
+            if (root.has("choices") && root.get("choices").isArray() && root.get("choices").size() > 0) {
+                // Standard OpenAI structure
+                resultText = root.path("choices").path(0).path("message").path("content").asText();
+            } else if (root.has("output") && root.get("output").isArray() && root.get("output").size() > 0) {
+                // Doubao-specific structure (as seen in the error log)
+                // The output array contains multiple items, we need the one with type "message"
+                for (JsonNode outputItem : root.get("output")) {
+                    if ("message".equals(outputItem.path("role").asText()) || "assistant".equals(outputItem.path("role").asText())) {
+                        JsonNode responseContentArray = outputItem.path("content");
+                        if (responseContentArray.isArray() && responseContentArray.size() > 0) {
+                            resultText = responseContentArray.path(0).path("text").asText();
+                            if (resultText == null || resultText.isEmpty()) {
+                                resultText = responseContentArray.path(0).path("output_text").asText();
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (resultText != null && !resultText.isEmpty()) {
+                // Remove potential markdown code blocks if the model included them
+                String jsonContent = resultText.trim();
+                if (jsonContent.startsWith("```")) {
+                    jsonContent = jsonContent.replaceAll("```(json)?", "").replaceAll("```", "").trim();
+                }
+
+                try {
+                    JsonNode translatedArray = objectMapper.readTree(jsonContent);
+                    if (translatedArray.isArray()) {
+                        int limit = Math.min(batch.size(), translatedArray.size());
+                        for (int j = 0; j < limit; j++) {
+                            batch.get(j).setCn(translatedArray.get(j).asText().trim());
+                        }
+                    } else {
+                        throw new Exception("Response is not a JSON array: " + jsonContent);
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to parse JSON array from Doubao, falling back to line-by-line: {}", resultText);
+                    // Fallback to line-by-line if JSON parsing fails
+                    String[] translatedLines = resultText.split("\n");
+                    int limit = Math.min(batch.size(), translatedLines.length);
+                    for (int j = 0; j < limit; j++) {
+                        batch.get(j).setCn(translatedLines[j].trim());
+                    }
                 }
             } else {
                 throw new Exception("Unexpected Doubao response structure: " + response.body());

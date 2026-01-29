@@ -8,6 +8,7 @@ import com.velp.interfaces.rest.dto.ParserStatusResponse;
 import com.velp.interfaces.rest.dto.TaskResponse;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -35,6 +36,11 @@ public class MediaController {
     public ParserStatusResponse getStatus(@PathVariable String taskId) {
         MediaRepository.TaskStatus status = mediaApplicationService.getTaskStatus(taskId);
         return new ParserStatusResponse(status.status(), status.progress(), status.videoId(), status.error());
+    }
+
+    @GetMapping("/parser/tasks")
+    public List<MediaRepository.TaskEntry> getAllTasks() {
+        return mediaApplicationService.getAllTasks();
     }
 
     @GetMapping("/course/{videoId}/detail")

@@ -6,12 +6,10 @@ import java.util.List;
 import java.util.Optional;
 
 public interface MediaRepository {
-    void saveTaskStatus(String taskId, String status, int progress, String videoId, String error);
+    void saveTaskStatus(String taskId, String status, int progress, String videoId, String error, String url);
     Optional<TaskStatus> getTaskStatus(String taskId);
+    List<TaskEntry> getAllTasks();
     
-    // In a real app, we'd save Media entities. 
-    // For now, we just need to know if a video exists on disk (Infrastructure concern) 
-    // or return metadata.
-    
-    record TaskStatus(String status, int progress, String videoId, String error) {}
+    record TaskStatus(String status, int progress, String videoId, String error, String url) {}
+    record TaskEntry(String taskId, String status, int progress, String videoId, String url) {}
 }
