@@ -48,6 +48,7 @@ public class YtDlpClient {
         command.add(ytDlpPath);
         command.add("-f");
         command.add(AppConstants.YtDlp.FORMAT_BEST);
+        command.add("--force-ipv4");
         command.add("--write-sub");
         command.add("--write-auto-sub");
         command.add("--sub-lang");
@@ -61,7 +62,7 @@ public class YtDlpClient {
         command.add("--extractor-args");
         command.add(AppConstants.YtDlp.EXTRACTOR_ARGS_YT);
         command.add("--user-agent");
-        command.add("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36");
+        command.add("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36");
         command.add("--referer");
         command.add(AppConstants.YtDlp.REFERER_YT);
         command.add("--output");
