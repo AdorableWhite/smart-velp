@@ -61,11 +61,19 @@ public class MediaApplicationService {
 
     public MediaRepository.TaskStatus getTaskStatus(String taskId) {
         return mediaRepository.getTaskStatus(taskId)
-                .orElse(new MediaRepository.TaskStatus(AppConstants.TaskStatus.FAILED, 0, null, "Task not found", "", ""));
+                .orElse(new MediaRepository.TaskStatus(AppConstants.TaskStatus.FAILED, 0, null, "Task not found", "", "", 0L));
     }
 
     public List<MediaRepository.TaskEntry> getAllTasks() {
         return mediaRepository.getAllTasks();
+    }
+
+    public void deleteTask(String taskId) {
+        mediaRepository.deleteTask(taskId);
+    }
+
+    public void deleteFailedTasks() {
+        mediaRepository.deleteFailedTasks();
     }
 
     public CourseDetailResponse getCourseDetail(String videoId) {

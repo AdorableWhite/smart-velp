@@ -43,6 +43,16 @@ public class MediaController {
         return mediaApplicationService.getAllTasks();
     }
 
+    @DeleteMapping("/parser/tasks/{taskId}")
+    public void deleteTask(@PathVariable String taskId) {
+        mediaApplicationService.deleteTask(taskId);
+    }
+
+    @DeleteMapping("/parser/tasks/failed")
+    public void deleteFailedTasks() {
+        mediaApplicationService.deleteFailedTasks();
+    }
+
     @GetMapping("/course/{videoId}/detail")
     public CourseDetailResponse getCourseDetail(@PathVariable String videoId) {
         return mediaApplicationService.getCourseDetail(videoId);

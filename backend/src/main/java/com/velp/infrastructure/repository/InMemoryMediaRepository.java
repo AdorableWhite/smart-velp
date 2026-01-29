@@ -2,6 +2,7 @@ package com.velp.infrastructure.repository;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.velp.common.constants.AppConstants;
 import com.velp.domain.repository.MediaRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -59,9 +60,25 @@ public class InMemoryMediaRepository implements MediaRepository {
         TaskStatus existing = taskMap.get(taskId);
         String finalUrl = (url != null) ? url : (existing != null ? existing.url() : "");
         String finalTitle = (title != null) ? title : (existing != null ? existing.title() : "");
+        long createdAt = (existing != null && existing.createdAt() > 0) ? existing.createdAt() : System.currentTimeMillis();
         
-        taskMap.put(taskId, new TaskStatus(status, progress, videoId, error, finalUrl, finalTitle));
+        taskMap.put(taskId, new TaskStatus(status, progress, videoId, error, finalUrl, finalTitle, createdAt));
         persistTasks();
+    }
+
+    @Override
+    public void deleteTask(String taskId) {
+        if (taskMap.remove(taskId) != null) {
+            persistTasks();
+        }
+    }
+
+    @Override
+    public void deleteFailedTasks() {
+        boolean removed = taskMap.entrySet().removeIf(entry -> AppConstants.TaskStatus.FAILED.equals(entry.getValue().status()));
+        if (removed) {
+            persistTasks();
+        }
     }
 
     @Override
@@ -78,7 +95,8 @@ public class InMemoryMediaRepository implements MediaRepository {
                         e.getValue().progress(), 
                         e.getValue().videoId(), 
                         e.getValue().url(), 
-                        e.getValue().title()))
+                        e.getValue().title(),
+                        e.getValue().createdAt()))
                 .toList();
     }
 }

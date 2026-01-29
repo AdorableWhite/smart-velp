@@ -33,11 +33,18 @@ const elements = {
     fullScreenBtn: document.getElementById('fullScreenBtn'),
     fontSizeSlider: document.getElementById('fontSizeSlider'),
     fontSizeValue: document.getElementById('fontSizeValue'),
+    clearFailedBtn: document.getElementById('clearFailedBtn'),
     speedBtns: document.querySelectorAll('.speed-btn'),
     videoContainer: document.getElementById('videoContainer'),
     videoSubtitleOverlay: document.getElementById('videoSubtitleOverlay'),
     overlayEn: document.querySelector('.overlay-en'),
-    overlayCn: document.querySelector('.overlay-cn')
+    overlayCn: document.querySelector('.overlay-cn'),
+    // Modal Elements
+    customModal: document.getElementById('customModal'),
+    modalTitle: document.getElementById('modalTitle'),
+    modalMessage: document.getElementById('modalMessage'),
+    modalConfirmBtn: document.getElementById('modalConfirmBtn'),
+    modalCancelBtn: document.getElementById('modalCancelBtn')
 };
 
 /**
@@ -89,6 +96,8 @@ function init() {
         const size = e.target.value;
         setFontSize(size);
     });
+
+    elements.clearFailedBtn.addEventListener('click', clearFailedTasks);
 
     // Fullscreen Change Listener
     const handleFullscreenChange = () => {
@@ -170,18 +179,17 @@ function setFontSize(size) {
  */
 async function loadTasks() {
     try {
-        // Note: Assuming there's an endpoint to get all tasks. 
-        // If not, we might need to implement one or use local storage for task history.
-        // For now, let's assume /api/parser/tasks exists or we'll handle the error.
         const res = await fetch(`${API_BASE}/parser/tasks`);
         if (!res.ok) throw new Error('Failed to fetch tasks');
         
-        const tasks = await res.json();
+        let tasks = await res.json();
+        // Sort by createdAt descending (newest first)
+        tasks.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        
         state.tasks = tasks;
         renderTaskList();
     } catch (e) {
-        console.warn('Task list loading failed (endpoint might not exist yet):', e);
-        // Fallback: If no endpoint, we can't show the list unless we track it locally
+        console.warn('Task list loading failed:', e);
     }
 }
 
@@ -205,7 +213,8 @@ function renderTaskList() {
             <div class="task-item status-${task.status} ${isActive ? 'active' : ''}" 
                  data-task-id="${task.taskId}"
                  title="链接: ${task.url}\n状态: ${getStatusLabel(task.status)}\n进度: ${task.progress || 0}%"
-                 style="cursor: ${isCompleted ? 'pointer' : 'not-allowed'}">
+                 style="cursor: ${isCompleted ? 'pointer' : 'default'}">
+                <button class="delete-task" data-task-id="${task.taskId}" title="删除任务">✕</button>
                 <div class="task-title" title="${displayTitle}">${displayTitle}</div>
                 <div class="task-status">
                     <span class="status-dot dot-${task.status}"></span>
@@ -217,7 +226,10 @@ function renderTaskList() {
 
     // Add click listeners to task items
     elements.taskList.querySelectorAll('.task-item').forEach(item => {
-        item.addEventListener('click', () => {
+        item.addEventListener('click', (e) => {
+            // Don't trigger task selection if delete button was clicked
+            if (e.target.classList.contains('delete-task')) return;
+            
             const taskId = item.dataset.taskId;
             const task = state.tasks.find(t => t.taskId === taskId);
             if (task && task.status === 'completed') {
@@ -225,6 +237,102 @@ function renderTaskList() {
             }
         });
     });
+
+    // Add click listeners to delete buttons
+    elements.taskList.querySelectorAll('.delete-task').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const taskId = btn.dataset.taskId;
+            const confirmed = await showModal('确认删除', '确定要彻底删除这个学习任务吗？删除后将无法找回。');
+            if (confirmed) {
+                deleteTask(taskId);
+            }
+        });
+    });
+}
+
+/**
+ * Custom Modal implementation
+ * @returns {Promise<boolean>}
+ */
+function showModal(title, message, options = { showCancel: true, confirmText: '确定', cancelText: '取消' }) {
+    return new Promise((resolve) => {
+        elements.modalTitle.innerText = title;
+        elements.modalMessage.innerText = message;
+        elements.modalConfirmBtn.innerText = options.confirmText || '确定';
+        elements.modalCancelBtn.innerText = options.cancelText || '取消';
+        
+        if (options.showCancel === false) {
+            elements.modalCancelBtn.classList.add('hidden');
+        } else {
+            elements.modalCancelBtn.classList.remove('hidden');
+        }
+
+        const handleConfirm = () => {
+            cleanup();
+            resolve(true);
+        };
+
+        const handleCancel = () => {
+            cleanup();
+            resolve(false);
+        };
+
+        const cleanup = () => {
+            elements.modalConfirmBtn.removeEventListener('click', handleConfirm);
+            elements.modalCancelBtn.removeEventListener('click', handleCancel);
+            elements.customModal.classList.add('hidden');
+        };
+
+        elements.modalConfirmBtn.addEventListener('click', handleConfirm);
+        elements.modalCancelBtn.addEventListener('click', handleCancel);
+        elements.customModal.classList.remove('hidden');
+    });
+}
+
+/**
+ * Delete a single task
+ */
+async function deleteTask(taskId) {
+    try {
+        const res = await fetch(`${API_BASE}/parser/tasks/${taskId}`, {
+            method: 'DELETE'
+        });
+        if (res.ok) {
+            if (state.currentTaskId === taskId) {
+                state.currentTaskId = null;
+                switchView('welcome');
+            }
+            loadTasks();
+        } else {
+            showModal('删除失败', '服务器返回错误，请稍后再试。', { showCancel: false });
+        }
+    } catch (e) {
+        console.error('Delete task error', e);
+        showModal('删除失败', '无法连接到服务器: ' + e.message, { showCancel: false });
+    }
+}
+
+/**
+ * Clear all failed tasks
+ */
+async function clearFailedTasks() {
+    const confirmed = await showModal('清理异常任务', '系统将清理所有状态为“失败”的任务。确定要继续吗？');
+    if (!confirmed) return;
+    
+    try {
+        const res = await fetch(`${API_BASE}/parser/tasks/failed`, {
+            method: 'DELETE'
+        });
+        if (res.ok) {
+            loadTasks();
+        } else {
+            showModal('清理失败', '清理过程中出现服务器错误。', { showCancel: false });
+        }
+    } catch (e) {
+        console.error('Clear failed tasks error', e);
+        showModal('清理失败', '无法连接到服务器: ' + e.message, { showCancel: false });
+    }
 }
 
 function getStatusLabel(status) {
@@ -264,7 +372,7 @@ async function selectTask(taskId) {
 async function startParser() {
     const url = elements.youtubeUrl.value.trim();
     if (!url) {
-        alert('请输入有效的 YouTube 链接');
+        showModal('提示', '请输入有效的 YouTube 视频链接。', { showCancel: false });
         return;
     }
 
@@ -290,7 +398,7 @@ async function startParser() {
             throw new Error('任务提交失败');
         }
     } catch (e) {
-        alert('提交失败: ' + e.message);
+        showModal('提交失败', '提交过程中出现错误: ' + e.message, { showCancel: false });
     } finally {
         // Re-enable button so user can submit another link immediately
         elements.submitBtn.disabled = false;
@@ -343,7 +451,7 @@ async function loadCourse(videoId) {
         renderSubtitles();
     } catch (e) {
         console.error(e);
-        alert('加载内容失败');
+        showModal('加载失败', '无法加载视频内容，请检查网络或稍后重试。', { showCancel: false });
     }
 }
 

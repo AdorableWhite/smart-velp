@@ -12,6 +12,7 @@
         <aside class="sidebar">
             <div class="sidebar-header">
                 <h2>任务列表</h2>
+                <button id="clearFailedBtn" class="clear-btn" title="清理所有解析失败的任务">清理异常</button>
             </div>
             <div id="taskList" class="task-list">
                 <!-- 任务项将通过 JS 动态加载 -->
@@ -102,5 +103,21 @@
     </div>
 
     <script type="module" src="./app.js"></script>
+
+    <!-- 自定义弹窗 -->
+    <div id="customModal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="modalTitle">提示</h3>
+            </div>
+            <div class="modal-body">
+                <p id="modalMessage">内容</p>
+            </div>
+            <div class="modal-footer">
+                <button id="modalCancelBtn" class="modal-btn secondary">取消</button>
+                <button id="modalConfirmBtn" class="modal-btn primary">确定</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
