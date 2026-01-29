@@ -11,8 +11,6 @@ on:
 # 全局环境变量
 env:
   REGISTRY: ghcr.io # 使用 GitHub Container Registry 作为镜像仓库
-  IMAGE_NAME_FE: ${{ github.repository }}-frontend # 前端镜像名称，格式通常为：用户名/仓库名-frontend
-  IMAGE_NAME_BE: ${{ github.repository }}-backend # 后端镜像名称，格式通常为：用户名/仓库名-backend
 
 jobs:
   # 任务一：构建并推送 Docker 镜像
@@ -47,8 +45,15 @@ jobs:
           fi
           
           # 设置仓库所有者和名称的环境变量（转为小写）
-          echo "OWNER=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-          echo "REPO=$(echo ${{ github.event.repository.name }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          OWNER_LOWER=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')
+          REPO_LOWER=$(echo ${{ github.event.repository.name }} | tr '[:upper:]' '[:lower:]')
+          
+          echo "OWNER=$OWNER_LOWER" >> $GITHUB_ENV
+          echo "REPO=$REPO_LOWER" >> $GITHUB_ENV
+          
+          # 定义全小写的镜像名称
+          echo "IMAGE_NAME_FE=$OWNER_LOWER/$REPO_LOWER-frontend" >> $GITHUB_ENV
+          echo "IMAGE_NAME_BE=$OWNER_LOWER/$REPO_LOWER-backend" >> $GITHUB_ENV
 
       # 4. 构建并推送前端镜像
       - name: Build and push Frontend image
