@@ -1,0 +1,81 @@
+name: Multi-branch CI/CD
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_FE: ${{ github.repository }}-frontend
+  IMAGE_NAME_BE: ${{ github.repository }}-backend
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set Tag and Metadata
+        id: meta
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/master" ]; then
+            echo "TAG=prod" >> $GITHUB_ENV
+          else
+            echo "TAG=dev" >> $GITHUB_ENV
+          fi
+          echo "OWNER=${{ github.repository_owner }}" >> $GITHUB_ENV
+          echo "REPO=${{ github.event.repository.name }}" >> $GITHUB_ENV
+
+      - name: Build and push Frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FE }}:${{ env.TAG }}
+
+      - name: Build and push Backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BE }}:${{ env.TAG }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remote SSH deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd /opt/velp
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            if [ "${{ github.ref }}" = "refs/heads/master" ]; then
+              export TAG=prod
+            else
+              export TAG=dev
+            fi
+            
+            export OWNER=${{ github.repository_owner }}
+            export REPO=${{ github.event.repository.name }}
+            
+            docker compose pull
+            docker compose up -d

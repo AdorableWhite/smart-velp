@@ -1,0 +1,22 @@
+services:
+  frontend:
+    image: ghcr.io/${OWNER}/${REPO}-frontend:${TAG}
+    ports:
+      - "80:80"
+    restart: always
+    depends_on:
+      - backend
+
+  backend:
+    image: ghcr.io/${OWNER}/${REPO}-backend:${TAG}
+    ports:
+      - "9090:9090"
+    environment:
+      - VELP_YTDLP_PATH=/usr/local/bin/yt-dlp
+      - VELP_PYTHON_PATH=python3
+      # Secrets should be passed via environment variables in production
+      - DOUBAO_API_KEY=${DOUBAO_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+    restart: always
+    volumes:
+      - ./downloads:/app/downloads
