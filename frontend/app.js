@@ -1,5 +1,27 @@
 // API Base Configuration
-const API_BASE = '/api';
+// 支持环境变量配置，用于 GitHub Pages 部署
+// 如果设置了 VITE_API_BASE，使用该值；否则根据当前域名判断
+// 开发环境或同域名部署使用相对路径，GitHub Pages 使用完整后端域名
+const getApiBase = () => {
+    // 优先使用环境变量（构建时注入）
+    if (import.meta.env.VITE_API_BASE) {
+        return import.meta.env.VITE_API_BASE;
+    }
+    
+    // 如果是 localhost 或同域名，使用相对路径
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return '/api';
+    }
+    
+    // 生产环境：如果前端在 GitHub Pages，后端在自定义域名
+    // 使用当前协议和主域名（去掉 www 前缀）作为后端地址
+    const protocol = window.location.protocol;
+    const domain = hostname.replace(/^www\./, ''); // 去掉 www 前缀
+    return `${protocol}//${domain}/api`;
+};
+
+const API_BASE = getApiBase();
 
 // State Management
 let state = {

@@ -1,0 +1,15 @@
+# GitHub Pages 自定义域名配置
+# 
+# 使用说明：
+# 1. 将此文件内容替换为你的自定义域名（例如：www.yourdomain.com）
+# 2. 在 GitHub 仓库 Settings > Pages > Custom domain 中配置相同域名
+# 3. 确保 DNS 解析已正确配置（CNAME 记录指向 用户名.github.io）
+#
+# 注意：如果使用主域名（不带 www），需要配置 A 记录指向 GitHub Pages IP：
+# 185.199.108.153
+# 185.199.109.153
+# 185.199.110.153
+# 185.199.111.153
+#
+# 示例域名（请替换为你的实际域名）：
+# www.yourdomain.com

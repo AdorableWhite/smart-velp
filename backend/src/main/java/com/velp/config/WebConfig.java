@@ -2,6 +2,7 @@ package com.velp.config;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -13,6 +14,9 @@ public class WebConfig implements WebMvcConfigurer {
     @Value("${velp.storage.path:downloads}")
     private String storagePath;
 
+    @Value("${velp.cors.allowed-origins:}")
+    private String allowedOrigins;
+
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         String absPath = new File(storagePath).getAbsolutePath();
@@ -22,5 +26,27 @@ public class WebConfig implements WebMvcConfigurer {
         
         registry.addResourceHandler("/downloads/**")
                 .addResourceLocations("file:" + absPath);
+    }
+
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        // 如果配置了允许的源，使用配置的值；否则允许所有源（开发环境）
+        if (allowedOrigins != null && !allowedOrigins.trim().isEmpty()) {
+            String[] origins = allowedOrigins.split(",");
+            registry.addMapping("/api/**")
+                    .allowedOrigins(origins)
+                    .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
+                    .allowedHeaders("*")
+                    .allowCredentials(true)
+                    .maxAge(3600);
+        } else {
+            // 开发环境：允许所有源
+            registry.addMapping("/api/**")
+                    .allowedOriginPatterns("*")
+                    .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
+                    .allowedHeaders("*")
+                    .allowCredentials(true)
+                    .maxAge(3600);
+        }
     }
 }

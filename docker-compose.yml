@@ -17,6 +17,10 @@ services:
       # Secrets should be passed via environment variables in production
       - DOUBAO_API_KEY=${DOUBAO_API_KEY}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      # CORS configuration for GitHub Pages deployment
+      # Format: https://www.yourdomain.com,https://yourdomain.com
+      # Leave empty to allow all origins (development only)
+      - VELP_CORS_ALLOWED_ORIGINS=${VELP_CORS_ALLOWED_ORIGINS:-}
     restart: always
     volumes:
       - ./downloads:/app/downloads
