@@ -99,6 +99,10 @@ jobs:
             export OWNER=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')
             export REPO=$(echo ${{ github.event.repository.name }} | tr '[:upper:]' '[:lower:]')
             
+            # 导出 API 密钥供 docker-compose 使用
+            export DOUBAO_API_KEY=${{ secrets.DOUBAO_API_KEY }}
+            export DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}
+            
             # 拉取最新镜像并使用 docker-compose 启动
             docker compose pull
             docker compose up -d
