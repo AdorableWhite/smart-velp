@@ -39,11 +39,26 @@ public class WebConfig implements WebMvcConfigurer {
                     .allowedHeaders("*")
                     .allowCredentials(true)
                     .maxAge(3600);
+            
+            // 同时也为静态资源（视频文件）配置 CORS
+            registry.addMapping("/downloads/**")
+                    .allowedOrigins(origins)
+                    .allowedMethods("GET")
+                    .allowedHeaders("*")
+                    .allowCredentials(true)
+                    .maxAge(3600);
         } else {
             // 开发环境：允许所有源
             registry.addMapping("/api/**")
                     .allowedOriginPatterns("*")
                     .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
+                    .allowedHeaders("*")
+                    .allowCredentials(true)
+                    .maxAge(3600);
+            
+            registry.addMapping("/downloads/**")
+                    .allowedOriginPatterns("*")
+                    .allowedMethods("GET")
                     .allowedHeaders("*")
                     .allowCredentials(true)
                     .maxAge(3600);

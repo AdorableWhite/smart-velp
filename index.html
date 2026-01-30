@@ -3,27 +3,121 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart VELP - YouTube 解析</title>
+    <title>Smart VELP - 视频学习平台</title>
     <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-    <div class="container">
-        <h1>Smart VELP</h1>
-        <p class="subtitle">Video English Learning Platform (V1.1)</p>
-        
-        <div class="input-section">
-            <input type="text" id="youtubeUrl" placeholder="粘贴 YouTube 视频链接..." />
-            <button id="submitBtn">开始解析</button>
-        </div>
-
-        <div id="statusSection" class="hidden">
-            <p id="statusText">正在处理...</p>
-            <div class="progress-bar">
-                <div id="progressFill" class="progress-fill"></div>
+    <div class="app-layout">
+        <!-- 左侧任务列表 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>任务列表</h2>
+                <button id="clearFailedBtn" class="clear-btn" title="清理所有解析失败的任务">清理异常</button>
             </div>
-        </div>
+            <div id="taskList" class="task-list">
+                <!-- 任务项将通过 JS 动态加载 -->
+                <div class="loading-tasks">加载中...</div>
+            </div>
+        </aside>
+
+        <!-- 右侧主内容区 -->
+        <main class="main-content">
+            <!-- 顶部输入框 -->
+            <header class="top-bar">
+                <div class="input-group">
+                    <input type="text" id="youtubeUrl" placeholder="粘贴 YouTube 视频链接..." />
+                    <button id="submitBtn">开始解析</button>
+                </div>
+            </header>
+
+            <!-- 欢迎/空状态页面 -->
+            <div id="welcomeView" class="view-container welcome-view">
+                <div class="welcome-card">
+                    <h1>Smart VELP</h1>
+                    <p>输入视频链接开始学习，或从左侧选择已完成的任务。</p>
+                </div>
+            </div>
+
+            <!-- 状态显示区 -->
+            <div id="statusView" class="view-container hidden">
+                <div class="status-card">
+                    <p id="statusText">正在处理...</p>
+                    <div class="progress-bar">
+                        <div id="progressFill" class="progress-fill"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 视频播放区 -->
+            <div id="playerView" class="view-container hidden">
+                <div class="player-layout">
+                    <div class="video-container" id="videoContainer">
+                        <video id="mainVideo" controls></video>
+                        <div id="videoSubtitleOverlay" class="video-subtitle-overlay hidden">
+                            <div class="overlay-en"></div>
+                            <div class="overlay-cn"></div>
+                        </div>
+                    </div>
+                    <div class="subtitle-controls">
+                        <div class="playback-controls">
+                            <div class="speed-control">
+                                <span class="label">倍速:</span>
+                                <div class="speed-buttons">
+                                    <button class="speed-btn" data-speed="0.75">0.75</button>
+                                    <button class="speed-btn active" data-speed="1">1</button>
+                                    <button class="speed-btn" data-speed="1.5">1.5</button>
+                                    <button class="speed-btn" data-speed="2">2</button>
+                                    <button class="speed-btn" data-speed="2.5">2.5</button>
+                                    <button class="speed-btn" data-speed="3">3</button>
+                                </div>
+                                <input type="range" id="speedSlider" min="0.5" max="4" step="0.1" value="1" title="自定义倍速">
+                                <span id="speedValue">1.0x</span>
+                            </div>
+                            <div class="loop-control">
+                                <button id="loopBtn" class="control-btn" title="循环播放当前句子">
+                                    <span class="icon">🔄</span> 逐句精听
+                                </button>
+                                <button id="fullScreenBtn" class="control-btn" title="全屏学习模式">
+                                    <span class="icon">⛶</span> 全屏
+                                </button>
+                            </div>
+                            <div class="subtitle-config">
+                                <span class="label">字幕大小:</span>
+                                <input type="range" id="fontSizeSlider" min="12" max="48" step="1" value="24" title="调节字幕大小">
+                                <span id="fontSizeValue">24px</span>
+                            </div>
+                        </div>
+                        <select id="subModeSelect">
+                            <option value="dual">双语模式</option>
+                            <option value="en">仅英文</option>
+                            <option value="cn">仅中文</option>
+                            <option value="none">无字幕</option>
+                        </select>
+                    </div>
+                    <div id="subtitleList" class="subtitle-list">
+                        <!-- 字幕项将通过 JS 动态加载 -->
+                    </div>
+                </div>
+            </div>
+        </main>
     </div>
 
     <script type="module" src="./app.js"></script>
+
+    <!-- 自定义弹窗 -->
+    <div id="customModal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="modalTitle">提示</h3>
+            </div>
+            <div class="modal-body">
+                <p id="modalMessage">内容</p>
+            </div>
+            <div class="modal-footer">
+                <button id="modalCancelBtn" class="modal-btn secondary">取消</button>
+                <button id="modalConfirmBtn" class="modal-btn primary">确定</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

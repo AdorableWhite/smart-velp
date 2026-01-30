@@ -13,83 +13,95 @@ env:
   REGISTRY: ghcr.io # 使用 GitHub Container Registry 作为镜像仓库
 
 jobs:
-  # 任务一：构建并推送 Docker 镜像
-  build-and-push:
-    runs-on: ubuntu-latest # 使用最新的 Ubuntu 环境运行
-    permissions:
-      contents: read # 允许读取代码内容
-      packages: write # 允许写入 GitHub Packages (推送镜像)
-
+  # 任务一：构建前端并部署到 GitHub Pages
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
     steps:
-      # 1. 检出源代码
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. 登录到 GitHub Container Registry
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm install
+
+      - name: Build frontend
+        working-directory: ./frontend
+        env:
+          VITE_API_BASE: ${{ secrets.PROD_API_BASE }} # 生产环境后端地址，例如 https://api.yourdomain.com
+        run: npm run build
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./frontend/dist
+          cname: ${{ secrets.FRONTEND_CNAME }} # 可选：自定义前端域名
+
+  # 任务二：构建后端镜像并推送到 GHCR
+  build-and-push-backend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }} # 使用触发工作流的用户
-          password: ${{ secrets.GITHUB_TOKEN }} # 使用 GitHub 自动生成的 Token
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 3. 设置镜像标签和元数据
       - name: Set Tag and Metadata
         id: meta
         run: |
-          # 如果是 master 分支，设置 TAG 为 prod，否则设置为 dev
           if [ "${{ github.ref }}" = "refs/heads/master" ]; then
             echo "TAG=prod" >> $GITHUB_ENV
           else
             echo "TAG=dev" >> $GITHUB_ENV
           fi
           
-          # 设置仓库所有者和名称的环境变量（转为小写）
           OWNER_LOWER=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')
           REPO_LOWER=$(echo ${{ github.event.repository.name }} | tr '[:upper:]' '[:lower:]')
           
           echo "OWNER=$OWNER_LOWER" >> $GITHUB_ENV
           echo "REPO=$REPO_LOWER" >> $GITHUB_ENV
-          
-          # 定义全小写的镜像名称
-          echo "IMAGE_NAME_FE=$OWNER_LOWER/$REPO_LOWER-frontend" >> $GITHUB_ENV
           echo "IMAGE_NAME_BE=$OWNER_LOWER/$REPO_LOWER-backend" >> $GITHUB_ENV
 
-      # 4. 构建并推送前端镜像
-      - name: Build and push Frontend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend # 构建上下文为 frontend 目录
-          push: true # 构建完成后自动推送
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FE }}:${{ env.TAG }} # 镜像完整路径和标签
-
-      # 5. 构建并推送后端镜像
       - name: Build and push Backend image
         uses: docker/build-push-action@v5
         with:
-          context: ./backend # 构建上下文为 backend 目录
+          context: ./backend
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BE }}:${{ env.TAG }}
 
-  # 任务二：远程部署
-  deploy:
-    needs: build-and-push # 只有 build-and-push 任务成功后才执行部署
+  # 任务三：远程部署后端到服务器
+  deploy-backend:
+    needs: build-and-push-backend
     runs-on: ubuntu-latest
     steps:
-      # 通过 SSH 远程执行部署命令
       - name: Remote SSH deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SSH_HOST }} # 服务器 IP（需在 GitHub Secrets 中配置）
-          username: ${{ secrets.SSH_USER }} # 服务器用户名
-          key: ${{ secrets.SSH_KEY }} # 服务器 SSH 私钥
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
           script: |
-            cd /opt/velp # 进入服务器上的项目部署目录
+            cd /opt/velp
             
-            # 登录 GitHub Container Registry
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
-            # 在服务器上重复标签设置逻辑
             if [ "${{ github.ref }}" = "refs/heads/master" ]; then
               export TAG=prod
             else
@@ -99,10 +111,10 @@ jobs:
             export OWNER=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')
             export REPO=$(echo ${{ github.event.repository.name }} | tr '[:upper:]' '[:lower:]')
             
-            # 导出 API 密钥供 docker-compose 使用
+            # 环境变量
             export DOUBAO_API_KEY=${{ secrets.DOUBAO_API_KEY }}
             export DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}
+            export ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }} # 允许的前端域名，如 https://zxx.github.io
             
-            # 拉取最新镜像并使用 docker-compose 启动
-            docker compose pull
-            docker compose up -d
+            docker compose pull backend
+            docker compose up -d backend

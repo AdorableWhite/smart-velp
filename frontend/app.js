@@ -11,17 +11,17 @@ const getApiBase = () => {
     // 如果是 localhost 或同域名，使用相对路径
     const hostname = window.location.hostname;
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        return '/api';
+        return ''; // 使用相对路径，Vite 代理会处理 /api
     }
     
     // 生产环境：如果前端在 GitHub Pages，后端在自定义域名
-    // 使用当前协议和主域名（去掉 www 前缀）作为后端地址
-    const protocol = window.location.protocol;
-    const domain = hostname.replace(/^www\./, ''); // 去掉 www 前缀
-    return `${protocol}//${domain}/api`;
+    // 默认回退到相对路径，或者你可以硬编码一个默认的后端域名
+    return '';
 };
 
 const API_BASE = getApiBase();
+const API_PREFIX = '/api';
+const DOWNLOADS_PREFIX = '/downloads';
 
 // State Management
 let state = {
@@ -201,7 +201,7 @@ function setFontSize(size) {
  */
 async function loadTasks() {
     try {
-        const res = await fetch(`${API_BASE}/parser/tasks`);
+        const res = await fetch(`${API_BASE}${API_PREFIX}/tasks`);
         if (!res.ok) throw new Error('Failed to fetch tasks');
         
         let tasks = await res.json();
@@ -317,7 +317,7 @@ function showModal(title, message, options = { showCancel: true, confirmText: '�
  */
 async function deleteTask(taskId) {
     try {
-        const res = await fetch(`${API_BASE}/parser/tasks/${taskId}`, {
+        const res = await fetch(`${API_BASE}${API_PREFIX}/tasks/${taskId}`, {
             method: 'DELETE'
         });
         if (res.ok) {
@@ -343,7 +343,7 @@ async function clearFailedTasks() {
     if (!confirmed) return;
     
     try {
-        const res = await fetch(`${API_BASE}/parser/tasks/failed`, {
+        const res = await fetch(`${API_BASE}${API_PREFIX}/tasks/failed`, {
             method: 'DELETE'
         });
         if (res.ok) {
@@ -377,7 +377,7 @@ async function selectTask(taskId) {
     
     try {
         // First get task info to get videoId
-        const resTask = await fetch(`${API_BASE}/parser/status/${taskId}`);
+        const resTask = await fetch(`${API_BASE}${API_PREFIX}/status/${taskId}`);
         const taskData = await resTask.json();
         
         if (taskData.videoId) {
@@ -404,7 +404,7 @@ async function startParser() {
     elements.submitBtn.innerText = '提交中...';
 
     try {
-        const res = await fetch(`${API_BASE}/parser/analyze`, {
+        const res = await fetch(`${API_BASE}${API_PREFIX}/analyze`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url })
@@ -436,7 +436,7 @@ function startPolling(taskId) {
 
     state.pollingInterval = setInterval(async () => {
         try {
-            const res = await fetch(`${API_BASE}/parser/status/${taskId}`);
+            const res = await fetch(`${API_BASE}${API_PREFIX}/status/${taskId}`);
             const data = await res.json();
 
             elements.progressFill.style.width = data.progress + '%';
@@ -463,10 +463,16 @@ function startPolling(taskId) {
  */
 async function loadCourse(videoId) {
     try {
-        const res = await fetch(`${API_BASE}/course/${videoId}/detail`);
+        const res = await fetch(`${API_BASE}${API_PREFIX}/course/${videoId}/detail`);
         const data = await res.json();
 
-        elements.mainVideo.src = data.videoUrl; 
+        // 处理视频 URL，如果是相对路径则拼接 API_BASE
+        let videoUrl = data.videoUrl;
+        if (videoUrl.startsWith('/')) {
+            videoUrl = `${API_BASE}${videoUrl}`;
+        }
+        
+        elements.mainVideo.src = videoUrl; 
         elements.mainVideo.playbackRate = state.playbackRate; // Re-apply current speed
         state.subtitles = data.subtitles || [];
         state.currentSubIndex = -1;
