@@ -14,6 +14,12 @@ on:
   # schedule:
   #   - cron: '0 18 * * *' # 北京时间凌晨 2 点
 
+# 全局权限设置，确保有权推送到 gh-pages 分支
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 # 全局环境变量
 env:
   REGISTRY: ghcr.io # 使用 GitHub Container Registry 作为镜像仓库
