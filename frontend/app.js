@@ -61,6 +61,9 @@ const elements = {
     videoSubtitleOverlay: document.getElementById('videoSubtitleOverlay'),
     overlayEn: document.querySelector('.overlay-en'),
     overlayCn: document.querySelector('.overlay-cn'),
+    // Stats Elements
+    statCompleted: document.getElementById('statCompleted'),
+    statProcessing: document.getElementById('statProcessing'),
     // Modal Elements
     customModal: document.getElementById('customModal'),
     modalTitle: document.getElementById('modalTitle'),
@@ -210,9 +213,23 @@ async function loadTasks() {
         
         state.tasks = tasks;
         renderTaskList();
+        updateStats();
     } catch (e) {
         console.warn('Task list loading failed:', e);
     }
+}
+
+/**
+ * Update the statistics panel
+ */
+function updateStats() {
+    if (!elements.statCompleted || !elements.statProcessing) return;
+    
+    const completedCount = state.tasks.filter(t => t.status === 'completed').length;
+    const processingCount = state.tasks.filter(t => t.status === 'processing' || t.status === 'pending').length;
+    
+    elements.statCompleted.innerText = completedCount;
+    elements.statProcessing.innerText = processingCount;
 }
 
 /**

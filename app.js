@@ -11,17 +11,17 @@ const getApiBase = () => {
     // 如果是 localhost 或同域名，使用相对路径
     const hostname = window.location.hostname;
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        return '/api';
+        return ''; // 使用相对路径，Vite 代理会处理 /api
     }
     
     // 生产环境：如果前端在 GitHub Pages，后端在自定义域名
-    // 使用当前协议 and 主域名（去掉 www 前缀）作为后端地址
-    const protocol = window.location.protocol;
-    const domain = hostname.replace(/^www\./, ''); // 去掉 www 前缀
-    return `${protocol}//${domain}/api`;
+    // 默认回退到相对路径，或者你可以硬编码一个默认的后端域名
+    return '';
 };
 
 const API_BASE = getApiBase();
+const API_PREFIX = '/api';
+const DOWNLOADS_PREFIX = '/downloads';
 
 // State Management
 let state = {
@@ -61,6 +61,9 @@ const elements = {
     videoSubtitleOverlay: document.getElementById('videoSubtitleOverlay'),
     overlayEn: document.querySelector('.overlay-en'),
     overlayCn: document.querySelector('.overlay-cn'),
+    // Stats Elements
+    statCompleted: document.getElementById('statCompleted'),
+    statProcessing: document.getElementById('statProcessing'),
     // Modal Elements
     customModal: document.getElementById('customModal'),
     modalTitle: document.getElementById('modalTitle'),
@@ -74,72 +77,60 @@ const elements = {
  */
 function init() {
     // Event Listeners
-    if (elements.submitBtn) elements.submitBtn.addEventListener('click', startParser);
-    if (elements.subModeSelect) {
-        elements.subModeSelect.addEventListener('change', (e) => {
-            state.subMode = e.target.value;
-            renderSubtitles();
-            // Update overlay immediately if visible
-            if (state.currentSubIndex !== -1) {
-                const sub = state.subtitles[state.currentSubIndex];
-                elements.overlayEn.innerText = state.subMode !== 'cn' ? sub.en : '';
-                elements.overlayCn.innerText = state.subMode !== 'en' ? sub.cn : '';
-                if (state.subMode === 'none') {
-                    elements.overlayEn.innerText = '';
-                    elements.overlayCn.innerText = '';
-                }
+    elements.submitBtn.addEventListener('click', startParser);
+    elements.subModeSelect.addEventListener('change', (e) => {
+        state.subMode = e.target.value;
+        renderSubtitles();
+        // Update overlay immediately if visible
+        if (state.currentSubIndex !== -1) {
+            const sub = state.subtitles[state.currentSubIndex];
+            elements.overlayEn.innerText = state.subMode !== 'cn' ? sub.en : '';
+            elements.overlayCn.innerText = state.subMode !== 'en' ? sub.cn : '';
+            if (state.subMode === 'none') {
+                elements.overlayEn.innerText = '';
+                elements.overlayCn.innerText = '';
             }
-        });
-    }
+        }
+    });
 
-    if (elements.mainVideo) {
-        elements.mainVideo.addEventListener('timeupdate', () => {
-            syncSubtitles(elements.mainVideo.currentTime);
-        });
-    }
+    elements.mainVideo.addEventListener('timeupdate', () => {
+        syncSubtitles(elements.mainVideo.currentTime);
+    });
 
     // Speed Control Listeners
-    if (elements.speedBtns) {
-        elements.speedBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const speed = parseFloat(btn.dataset.speed);
-                setPlaybackRate(speed);
-            });
+    elements.speedBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const speed = parseFloat(btn.dataset.speed);
+            setPlaybackRate(speed);
         });
-    }
+    });
 
-    if (elements.speedSlider) {
-        elements.speedSlider.addEventListener('input', (e) => {
-            const speed = parseFloat(e.target.value);
-            setPlaybackRate(speed, false); // false means don't update slider value to avoid feedback loop
-        });
-    }
+    elements.speedSlider.addEventListener('input', (e) => {
+        const speed = parseFloat(e.target.value);
+        setPlaybackRate(speed, false); // false means don't update slider value to avoid feedback loop
+    });
 
     // Loop Control Listener
-    if (elements.loopBtn) elements.loopBtn.addEventListener('click', toggleLoop);
+    elements.loopBtn.addEventListener('click', toggleLoop);
 
     // Fullscreen Control Listener
-    if (elements.fullScreenBtn) elements.fullScreenBtn.addEventListener('click', toggleFullScreen);
+    elements.fullScreenBtn.addEventListener('click', toggleFullScreen);
 
     // Font Size Control Listener
-    if (elements.fontSizeSlider) {
-        elements.fontSizeSlider.addEventListener('input', (e) => {
-            const size = e.target.value;
-            setFontSize(size);
-        });
-    }
+    elements.fontSizeSlider.addEventListener('input', (e) => {
+        const size = e.target.value;
+        setFontSize(size);
+    });
 
-    if (elements.clearFailedBtn) elements.clearFailedBtn.addEventListener('click', clearFailedTasks);
+    elements.clearFailedBtn.addEventListener('click', clearFailedTasks);
 
     // Fullscreen Change Listener
     const handleFullscreenChange = () => {
         const isFullscreen = document.fullscreenElement !== null;
-        if (elements.videoSubtitleOverlay) {
-            if (isFullscreen) {
-                elements.videoSubtitleOverlay.classList.remove('hidden');
-            } else {
-                elements.videoSubtitleOverlay.classList.add('hidden');
-            }
+        if (isFullscreen) {
+            elements.videoSubtitleOverlay.classList.remove('hidden');
+        } else {
+            elements.videoSubtitleOverlay.classList.add('hidden');
         }
     };
 
@@ -161,23 +152,21 @@ function init() {
  */
 function setPlaybackRate(speed, updateSlider = true) {
     state.playbackRate = speed;
-    if (elements.mainVideo) elements.mainVideo.playbackRate = speed;
-    if (elements.speedValue) elements.speedValue.innerText = speed.toFixed(1) + 'x';
+    elements.mainVideo.playbackRate = speed;
+    elements.speedValue.innerText = speed.toFixed(1) + 'x';
     
-    if (updateSlider && elements.speedSlider) {
+    if (updateSlider) {
         elements.speedSlider.value = speed;
     }
 
     // Update active class on buttons
-    if (elements.speedBtns) {
-        elements.speedBtns.forEach(btn => {
-            if (parseFloat(btn.dataset.speed) === speed) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
-        });
-    }
+    elements.speedBtns.forEach(btn => {
+        if (parseFloat(btn.dataset.speed) === speed) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
 }
 
 /**
@@ -185,7 +174,7 @@ function setPlaybackRate(speed, updateSlider = true) {
  */
 function toggleLoop() {
     state.isLooping = !state.isLooping;
-    if (elements.loopBtn) elements.loopBtn.classList.toggle('active', state.isLooping);
+    elements.loopBtn.classList.toggle('active', state.isLooping);
 }
 
 /**
@@ -193,11 +182,9 @@ function toggleLoop() {
  */
 function toggleFullScreen() {
     if (!document.fullscreenElement) {
-        if (elements.videoContainer) {
-            elements.videoContainer.requestFullscreen().catch(err => {
-                console.error(`无法进入全屏: ${err.message}`);
-            });
-        }
+        elements.videoContainer.requestFullscreen().catch(err => {
+            console.error(`无法进入全屏: ${err.message}`);
+        });
     } else {
         document.exitFullscreen();
     }
@@ -208,8 +195,8 @@ function toggleFullScreen() {
  */
 function setFontSize(size) {
     state.fontSize = size;
-    if (elements.fontSizeValue) elements.fontSizeValue.innerText = size + 'px';
-    if (elements.videoContainer) elements.videoContainer.style.setProperty('--sub-font-size', size + 'px');
+    elements.fontSizeValue.innerText = size + 'px';
+    elements.videoContainer.style.setProperty('--sub-font-size', size + 'px');
 }
 
 /**
@@ -217,7 +204,7 @@ function setFontSize(size) {
  */
 async function loadTasks() {
     try {
-        const res = await fetch(`${API_BASE}/parser/tasks`);
+        const res = await fetch(`${API_BASE}${API_PREFIX}/tasks`);
         if (!res.ok) throw new Error('Failed to fetch tasks');
         
         let tasks = await res.json();
@@ -226,9 +213,23 @@ async function loadTasks() {
         
         state.tasks = tasks;
         renderTaskList();
+        updateStats();
     } catch (e) {
         console.warn('Task list loading failed:', e);
     }
+}
+
+/**
+ * Update the statistics panel
+ */
+function updateStats() {
+    if (!elements.statCompleted || !elements.statProcessing) return;
+    
+    const completedCount = state.tasks.filter(t => t.status === 'completed').length;
+    const processingCount = state.tasks.filter(t => t.status === 'processing' || t.status === 'pending').length;
+    
+    elements.statCompleted.innerText = completedCount;
+    elements.statProcessing.innerText = processingCount;
 }
 
 /**
@@ -295,17 +296,15 @@ function renderTaskList() {
  */
 function showModal(title, message, options = { showCancel: true, confirmText: '确定', cancelText: '取消' }) {
     return new Promise((resolve) => {
-        if (elements.modalTitle) elements.modalTitle.innerText = title;
-        if (elements.modalMessage) elements.modalMessage.innerText = message;
-        if (elements.modalConfirmBtn) elements.modalConfirmBtn.innerText = options.confirmText || '确定';
-        if (elements.modalCancelBtn) elements.modalCancelBtn.innerText = options.cancelText || '取消';
+        elements.modalTitle.innerText = title;
+        elements.modalMessage.innerText = message;
+        elements.modalConfirmBtn.innerText = options.confirmText || '确定';
+        elements.modalCancelBtn.innerText = options.cancelText || '取消';
         
-        if (elements.modalCancelBtn) {
-            if (options.showCancel === false) {
-                elements.modalCancelBtn.classList.add('hidden');
-            } else {
-                elements.modalCancelBtn.classList.remove('hidden');
-            }
+        if (options.showCancel === false) {
+            elements.modalCancelBtn.classList.add('hidden');
+        } else {
+            elements.modalCancelBtn.classList.remove('hidden');
         }
 
         const handleConfirm = () => {
@@ -319,14 +318,14 @@ function showModal(title, message, options = { showCancel: true, confirmText: '�
         };
 
         const cleanup = () => {
-            if (elements.modalConfirmBtn) elements.modalConfirmBtn.removeEventListener('click', handleConfirm);
-            if (elements.modalCancelBtn) elements.modalCancelBtn.removeEventListener('click', handleCancel);
-            if (elements.customModal) elements.customModal.classList.add('hidden');
+            elements.modalConfirmBtn.removeEventListener('click', handleConfirm);
+            elements.modalCancelBtn.removeEventListener('click', handleCancel);
+            elements.customModal.classList.add('hidden');
         };
 
-        if (elements.modalConfirmBtn) elements.modalConfirmBtn.addEventListener('click', handleConfirm);
-        if (elements.modalCancelBtn) elements.modalCancelBtn.addEventListener('click', handleCancel);
-        if (elements.customModal) elements.customModal.classList.remove('hidden');
+        elements.modalConfirmBtn.addEventListener('click', handleConfirm);
+        elements.modalCancelBtn.addEventListener('click', handleCancel);
+        elements.customModal.classList.remove('hidden');
     });
 }
 
@@ -335,7 +334,7 @@ function showModal(title, message, options = { showCancel: true, confirmText: '�
  */
 async function deleteTask(taskId) {
     try {
-        const res = await fetch(`${API_BASE}/parser/tasks/${taskId}`, {
+        const res = await fetch(`${API_BASE}${API_PREFIX}/tasks/${taskId}`, {
             method: 'DELETE'
         });
         if (res.ok) {
@@ -361,7 +360,7 @@ async function clearFailedTasks() {
     if (!confirmed) return;
     
     try {
-        const res = await fetch(`${API_BASE}/parser/tasks/failed`, {
+        const res = await fetch(`${API_BASE}${API_PREFIX}/tasks/failed`, {
             method: 'DELETE'
         });
         if (res.ok) {
@@ -395,7 +394,7 @@ async function selectTask(taskId) {
     
     try {
         // First get task info to get videoId
-        const resTask = await fetch(`${API_BASE}/parser/status/${taskId}`);
+        const resTask = await fetch(`${API_BASE}${API_PREFIX}/status/${taskId}`);
         const taskData = await resTask.json();
         
         if (taskData.videoId) {
@@ -422,7 +421,7 @@ async function startParser() {
     elements.submitBtn.innerText = '提交中...';
 
     try {
-        const res = await fetch(`${API_BASE}/parser/analyze`, {
+        const res = await fetch(`${API_BASE}${API_PREFIX}/analyze`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url })
@@ -454,11 +453,11 @@ function startPolling(taskId) {
 
     state.pollingInterval = setInterval(async () => {
         try {
-            const res = await fetch(`${API_BASE}/parser/status/${taskId}`);
+            const res = await fetch(`${API_BASE}${API_PREFIX}/status/${taskId}`);
             const data = await res.json();
 
-            if (elements.progressFill) elements.progressFill.style.width = data.progress + '%';
-            if (elements.statusText) elements.statusText.innerText = `${getStatusLabel(data.status)}... (${data.progress}%)`;
+            elements.progressFill.style.width = data.progress + '%';
+            elements.statusText.innerText = `${getStatusLabel(data.status)}... (${data.progress}%)`;
 
             if (data.status === 'completed') {
                 clearInterval(state.pollingInterval);
@@ -466,7 +465,7 @@ function startPolling(taskId) {
                 selectTask(taskId);
             } else if (data.status === 'failed') {
                 clearInterval(state.pollingInterval);
-                if (elements.statusText) elements.statusText.innerText = '处理失败: ' + (data.error || '未知错误');
+                elements.statusText.innerText = '处理失败: ' + (data.error || '未知错误');
                 elements.submitBtn.disabled = false;
                 loadTasks();
             }
@@ -481,13 +480,17 @@ function startPolling(taskId) {
  */
 async function loadCourse(videoId) {
     try {
-        const res = await fetch(`${API_BASE}/course/${videoId}/detail`);
+        const res = await fetch(`${API_BASE}${API_PREFIX}/course/${videoId}/detail`);
         const data = await res.json();
 
-        if (elements.mainVideo) {
-            elements.mainVideo.src = data.videoUrl; 
-            elements.mainVideo.playbackRate = state.playbackRate; // Re-apply current speed
+        // 处理视频 URL，如果是相对路径则拼接 API_BASE
+        let videoUrl = data.videoUrl;
+        if (videoUrl.startsWith('/')) {
+            videoUrl = `${API_BASE}${videoUrl}`;
         }
+        
+        elements.mainVideo.src = videoUrl; 
+        elements.mainVideo.playbackRate = state.playbackRate; // Re-apply current speed
         state.subtitles = data.subtitles || [];
         state.currentSubIndex = -1;
         renderSubtitles();
@@ -501,7 +504,6 @@ async function loadCourse(videoId) {
  * Render subtitles in the right panel
  */
 function renderSubtitles() {
-    if (!elements.subtitleList) return;
     elements.subtitleList.className = `subtitle-list mode-${state.subMode}`;
     
     elements.subtitleList.innerHTML = state.subtitles.map((sub, index) => `
@@ -514,10 +516,8 @@ function renderSubtitles() {
     // Add click listeners
     document.querySelectorAll('.sub-item').forEach(item => {
         item.addEventListener('click', () => {
-            if (elements.mainVideo) {
-                elements.mainVideo.currentTime = parseFloat(item.dataset.start);
-                elements.mainVideo.play();
-            }
+            elements.mainVideo.currentTime = parseFloat(item.dataset.start);
+            elements.mainVideo.play();
         });
     });
 }
@@ -531,7 +531,7 @@ function syncSubtitles(time) {
         const currentSub = state.subtitles[state.currentSubIndex];
         // Add a small buffer (0.1s) to ensure we don't skip the loop due to timeupdate granularity
         if (time >= currentSub.endTime - 0.1) {
-            if (elements.mainVideo) elements.mainVideo.currentTime = currentSub.startTime;
+            elements.mainVideo.currentTime = currentSub.startTime;
             return;
         }
     }
@@ -552,7 +552,7 @@ function syncSubtitles(time) {
         
         // Update overlay text if in fullscreen
         const currentSubData = state.subtitles[index];
-        if (currentSubData && elements.overlayEn && elements.overlayCn) {
+        if (currentSubData) {
             elements.overlayEn.innerText = state.subMode !== 'cn' ? currentSubData.en : '';
             elements.overlayCn.innerText = state.subMode !== 'en' ? currentSubData.cn : '';
             
@@ -564,8 +564,8 @@ function syncSubtitles(time) {
         }
     } else if (index === -1 && state.currentSubIndex !== -1) {
         // Clear overlay if no subtitle matches current time
-        if (elements.overlayEn) elements.overlayEn.innerText = '';
-        if (elements.overlayCn) elements.overlayCn.innerText = '';
+        elements.overlayEn.innerText = '';
+        elements.overlayCn.innerText = '';
         state.currentSubIndex = -1;
     }
 }
@@ -574,13 +574,13 @@ function syncSubtitles(time) {
  * Helper to switch between different views
  */
 function switchView(viewName) {
-    if (elements.welcomeView) elements.welcomeView.classList.add('hidden');
-    if (elements.statusView) elements.statusView.classList.add('hidden');
-    if (elements.playerView) elements.playerView.classList.add('hidden');
+    elements.welcomeView.classList.add('hidden');
+    elements.statusView.classList.add('hidden');
+    elements.playerView.classList.add('hidden');
 
-    if (viewName === 'welcome' && elements.welcomeView) elements.welcomeView.classList.remove('hidden');
-    if (viewName === 'status' && elements.statusView) elements.statusView.classList.remove('hidden');
-    if (viewName === 'player' && elements.playerView) elements.playerView.classList.remove('hidden');
+    if (viewName === 'welcome') elements.welcomeView.classList.remove('hidden');
+    if (viewName === 'status') elements.statusView.classList.remove('hidden');
+    if (viewName === 'player') elements.playerView.classList.remove('hidden');
 }
 
 // Initialize on load

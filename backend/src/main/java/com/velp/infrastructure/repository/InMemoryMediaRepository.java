@@ -7,6 +7,7 @@ import com.velp.domain.repository.MediaRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
 import java.io.File;
@@ -15,8 +16,15 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 基于内存和本地 JSON 文件的媒体任务仓库实现。
+ * 
+ * 限制：由于依赖本地文件系统，不适合多节点部署（每个节点的文件不互通）。
+ * 适用场景：单机环境、快速开发、无需外部 Redis 依赖。
+ */
 @Slf4j
 @Repository
+@ConditionalOnProperty(name = "velp.repository.type", havingValue = "memory", matchIfMissing = true)
 public class InMemoryMediaRepository implements MediaRepository {
 
     @Value("${velp.storage.path:downloads}")

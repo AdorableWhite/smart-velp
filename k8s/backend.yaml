@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: velp-backend
+  namespace: velp
+spec:
+  # 多节点部署的核心：replicas 控制运行多少个后端实例
+  # 切换到 Redis 存储后，这里可以安全地设为 > 1
+  replicas: 3 
+  selector:
+    matchLabels:
+      app: velp-backend
+  template:
+    metadata:
+      labels:
+        app: velp-backend
+    spec:
+      containers:
+      - name: backend
+        image: ghcr.io/zxx/velp-backend:prod # 替换为您的实际镜像地址
+        ports:
+        - containerPort: 9090
+        env:
+        # 指定存储类型为 redis
+        - name: VELP_REPOSITORY_TYPE
+          value: "redis"
+        # 连接到 K8s 集群内部的 Redis 服务名
+        - name: SPRING_REDIS_HOST
+          value: "velp-redis-service"
+        - name: SPRING_REDIS_PORT
+          value: "6379"
+        # 从 K8s Secret 中安全地注入密钥
+        - name: DOUBAO_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: velp-secrets
+              key: doubao-api-key
+        - name: DEEPSEEK_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: velp-secrets
+              key: deepseek-api-key
+        - name: VELP_CORS_ALLOWED_ORIGINS
+          value: "*" 
+        volumeMounts:
+        # 挂载共享存储卷，用于存放视频文件
+        - name: downloads-storage
+          mountPath: /app/downloads
+      volumes:
+      - name: downloads-storage
+        persistentVolumeClaim:
+          claimName: velp-downloads-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: velp-backend-service
+  namespace: velp
+spec:
+  selector:
+    app: velp-backend
+  ports:
+  - port: 9090
+    targetPort: 9090

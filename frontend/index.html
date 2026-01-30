@@ -3,20 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart VELP - 莫兰迪色系视频学习平台</title>
+    <title>VELP - CYBERPUNK VIDEO LEARNING</title>
+    <!-- 引入科技感字体 -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./style.css">
 </head>
 <body>
+    <!-- 背景扫描线效果 -->
+    <div class="scanlines"></div>
+
     <div class="app-layout">
         <!-- 左侧任务列表 -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <h2>任务列表</h2>
+                <div class="logo-area">
+                    <span class="system-status">ONLINE</span>
+                    <h2>任务列表</h2>
+                </div>
                 <button id="clearFailedBtn" class="clear-btn" title="清理所有解析失败的任务">清理异常</button>
             </div>
+            
             <div id="taskList" class="task-list">
-                <!-- 任务项将通过 JS 动态加载 -->
-                <div class="loading-tasks">加载中...</div>
+                <div class="loading-tasks">正在接入数据库...</div>
+            </div>
+
+            <!-- 新增：统计面板 -->
+            <div class="sidebar-footer">
+                <div class="stats-panel">
+                    <div class="stat-item">
+                        <span class="stat-label">已学习视频</span>
+                        <span id="statCompleted" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">正在处理</span>
+                        <span id="statProcessing" class="stat-value">0</span>
+                    </div>
+                </div>
             </div>
         </aside>
 
@@ -25,7 +47,8 @@
             <!-- 顶部输入框 -->
             <header class="top-bar">
                 <div class="input-group">
-                    <input type="text" id="youtubeUrl" placeholder="粘贴 YouTube 视频链接..." />
+                    <div class="input-prefix">YOUTUBE_URL</div>
+                    <input type="text" id="youtubeUrl" placeholder="PASTE_LINK_HERE_..." />
                     <button id="submitBtn">开始解析</button>
                 </div>
             </header>
@@ -33,15 +56,23 @@
             <!-- 欢迎/空状态页面 -->
             <div id="welcomeView" class="view-container welcome-view">
                 <div class="welcome-card">
-                    <h1>Smart VELP</h1>
-                    <p>输入视频链接开始学习，或从左侧选择已完成的任务。</p>
+                    <div class="glitch-wrapper">
+                        <h1 class="glitch" data-text="Smart VELP">Smart VELP</h1>
+                    </div>
+                    <p>接入神经链接，输入视频地址开始沉浸式学习。</p>
+                    <div class="decoration-lines">
+                        <span></span><span></span><span></span>
+                    </div>
                 </div>
             </div>
 
             <!-- 状态显示区 -->
             <div id="statusView" class="view-container hidden">
                 <div class="status-card">
-                    <p id="statusText">正在处理...</p>
+                    <div class="status-header">
+                        <span class="blink">●</span> DATA_PROCESSING
+                    </div>
+                    <p id="statusText">正在同步核心数据...</p>
                     <div class="progress-bar">
                         <div id="progressFill" class="progress-fill"></div>
                     </div>
@@ -57,43 +88,55 @@
                             <div class="overlay-en"></div>
                             <div class="overlay-cn"></div>
                         </div>
+                        <!-- 视频内装饰 -->
+                        <div class="video-hud">
+                            <div class="hud-corner top-left"></div>
+                            <div class="hud-corner top-right"></div>
+                            <div class="hud-corner bottom-left"></div>
+                            <div class="hud-corner bottom-right"></div>
+                        </div>
                     </div>
+                    
                     <div class="subtitle-controls">
                         <div class="playback-controls">
                             <div class="speed-control">
-                                <span class="label">倍速:</span>
+                                <span class="label">P_RATE:</span>
                                 <div class="speed-buttons">
                                     <button class="speed-btn" data-speed="0.75">0.75</button>
                                     <button class="speed-btn active" data-speed="1">1</button>
                                     <button class="speed-btn" data-speed="1.5">1.5</button>
                                     <button class="speed-btn" data-speed="2">2</button>
-                                    <button class="speed-btn" data-speed="2.5">2.5</button>
-                                    <button class="speed-btn" data-speed="3">3</button>
                                 </div>
-                                <input type="range" id="speedSlider" min="0.5" max="4" step="0.1" value="1" title="自定义倍速">
+                                <input type="range" id="speedSlider" min="0.5" max="4" step="0.1" value="1">
                                 <span id="speedValue">1.0x</span>
                             </div>
+                            
                             <div class="loop-control">
                                 <button id="loopBtn" class="control-btn" title="循环播放当前句子">
-                                    <span class="icon">🔄</span> 逐句精听
+                                    <span class="icon">🔄</span> 精听模式
                                 </button>
-                                <button id="fullScreenBtn" class="control-btn" title="全屏学习模式">
-                                    <span class="icon">⛶</span> 全屏
+                                <button id="fullScreenBtn" class="control-btn">
+                                    <span class="icon">⛶</span> 全屏模式
                                 </button>
                             </div>
+                            
                             <div class="subtitle-config">
-                                <span class="label">字幕大小:</span>
-                                <input type="range" id="fontSizeSlider" min="12" max="48" step="1" value="24" title="调节字幕大小">
+                                <span class="label">SUB_SIZE:</span>
+                                <input type="range" id="fontSizeSlider" min="12" max="48" step="1" value="24">
                                 <span id="fontSizeValue">24px</span>
                             </div>
                         </div>
-                        <select id="subModeSelect">
-                            <option value="dual">双语模式</option>
-                            <option value="en">仅英文</option>
-                            <option value="cn">仅中文</option>
-                            <option value="none">无字幕</option>
-                        </select>
+                        <div class="mode-select-area">
+                            <span class="label">VIEW_MODE:</span>
+                            <select id="subModeSelect">
+                                <option value="dual">DUAL_LANG</option>
+                                <option value="en">ENGLISH_ONLY</option>
+                                <option value="cn">CHINESE_ONLY</option>
+                                <option value="none">HIDDEN</option>
+                            </select>
+                        </div>
                     </div>
+
                     <div id="subtitleList" class="subtitle-list">
                         <!-- 字幕项将通过 JS 动态加载 -->
                     </div>
@@ -108,14 +151,14 @@
     <div id="customModal" class="modal-overlay hidden">
         <div class="modal-card">
             <div class="modal-header">
-                <h3 id="modalTitle">提示</h3>
+                <h3 id="modalTitle">SYSTEM_PROMPT</h3>
             </div>
             <div class="modal-body">
-                <p id="modalMessage">内容</p>
+                <p id="modalMessage">READY_FOR_COMMAND</p>
             </div>
             <div class="modal-footer">
-                <button id="modalCancelBtn" class="modal-btn secondary">取消</button>
-                <button id="modalConfirmBtn" class="modal-btn primary">确定</button>
+                <button id="modalCancelBtn" class="modal-btn secondary">ABORT</button>
+                <button id="modalConfirmBtn" class="modal-btn primary">CONFIRM</button>
             </div>
         </div>
     </div>
