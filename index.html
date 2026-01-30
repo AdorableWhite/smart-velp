@@ -4,8 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VELP - CYBERPUNK VIDEO LEARNING</title>
-    <!-- 引入科技感字体 (使用国内镜像源加速) -->
+    
+    <!-- 1. 预连接加速域名解析 -->
+    <link rel="preconnect" href="https://fonts.geekzu.org">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- 2. 引入科技感字体 (增加 display=swap 确保文本立即显示) -->
     <link href="https://fonts.geekzu.org/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- 3. 内联关键 CSS，解决 LCP 延迟 -->
+    <style>
+        :root { --color-bg: #050505; --color-primary: #00f3ff; }
+        body { background-color: var(--color-bg); margin: 0; color: #e0e0e0; font-family: 'JetBrains Mono', monospace; }
+        .welcome-view { display: flex; justify-content: center; align-items: center; height: 100vh; background: radial-gradient(circle at center, rgba(0, 243, 255, 0.05) 0%, transparent 70%); }
+        .welcome-card { text-align: center; border: 1px solid var(--color-primary); padding: 40px; box-shadow: 0 0 15px rgba(0, 243, 255, 0.3); }
+        .glitch { font-size: 3rem; color: var(--color-primary); text-transform: uppercase; letter-spacing: 10px; }
+        .hidden { display: none !important; }
+    </style>
+    
     <link rel="stylesheet" href="./style.css">
 </head>
 <body>
