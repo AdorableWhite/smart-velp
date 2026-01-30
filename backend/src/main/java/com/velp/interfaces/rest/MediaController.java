@@ -6,8 +6,14 @@ import com.velp.domain.repository.MediaRepository;
 import com.velp.interfaces.rest.dto.CourseDetailResponse;
 import com.velp.interfaces.rest.dto.ParserStatusResponse;
 import com.velp.interfaces.rest.dto.TaskResponse;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.File;
 import java.util.List;
 import java.util.Map;
 
@@ -55,5 +61,21 @@ public class MediaController {
     @GetMapping("/course/{videoId}/detail")
     public CourseDetailResponse getCourseDetail(@PathVariable String videoId) {
         return mediaApplicationService.getCourseDetail(videoId);
+    }
+
+    @GetMapping("/course/{videoId}/download")
+    public ResponseEntity<Resource> downloadVideo(@PathVariable String videoId) {
+        File videoFile = mediaApplicationService.getVideoFile(videoId);
+        if (videoFile == null || !videoFile.exists()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        Resource resource = new FileSystemResource(videoFile);
+        String filename = videoFile.getName();
+        
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("video/mp4"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .body(resource);
     }
 }

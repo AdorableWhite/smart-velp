@@ -82,10 +82,8 @@ public class MediaApplicationService {
             throw new RuntimeException("Video not found");
         }
 
-        File[] videoFiles = videoDir.listFiles((dir, name) -> name.startsWith(AppConstants.Storage.VIDEO_PREFIX) 
-                && !name.endsWith(AppConstants.Storage.VTT_EXT) 
-                && !name.endsWith(AppConstants.Storage.JSON_EXT));
-        String videoFileName = (videoFiles != null && videoFiles.length > 0) ? videoFiles[0].getName() : "video" + AppConstants.Storage.MP4_EXT;
+        File videoFile = findVideoFile(videoDir);
+        String videoFileName = videoFile != null ? videoFile.getName() : "video" + AppConstants.Storage.MP4_EXT;
 
         File subsFile = new File(videoDir, AppConstants.Storage.SUBS_JSON);
         List<SubtitleLine> subtitles = new ArrayList<>();
@@ -113,6 +111,19 @@ public class MediaApplicationService {
         }
 
         return new CourseDetailResponse(title, "/downloads/" + videoId + "/" + videoFileName, dtos);
+    }
+
+    public File getVideoFile(String videoId) {
+        File videoDir = new File(storagePath, videoId);
+        return findVideoFile(videoDir);
+    }
+
+    private File findVideoFile(File videoDir) {
+        if (!videoDir.exists()) return null;
+        File[] videoFiles = videoDir.listFiles((dir, name) -> name.startsWith(AppConstants.Storage.VIDEO_PREFIX) 
+                && !name.endsWith(AppConstants.Storage.VTT_EXT) 
+                && !name.endsWith(AppConstants.Storage.JSON_EXT));
+        return (videoFiles != null && videoFiles.length > 0) ? videoFiles[0] : null;
     }
 
     @Async

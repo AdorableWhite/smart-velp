@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VELP - CYBERPUNK VIDEO LEARNING</title>
-    <!-- 引入科技感字体 -->
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <!-- 引入科技感字体 (使用国内镜像源加速) -->
+    <link href="https://fonts.geekzu.org/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./style.css">
 </head>
 <body>
@@ -20,7 +20,12 @@
                     <span class="system-status">ONLINE</span>
                     <h2>任务列表</h2>
                 </div>
-                <button id="clearFailedBtn" class="clear-btn" title="清理所有解析失败的任务">清理异常</button>
+                <div class="header-actions">
+                    <label class="auto-download-label" title="任务完成后自动下载到本地">
+                        <input type="checkbox" id="autoDownloadToggle"> 自动下载
+                    </label>
+                    <button id="clearFailedBtn" class="clear-btn" title="清理所有解析失败的任务">清理异常</button>
+                </div>
             </div>
             
             <div id="taskList" class="task-list">
@@ -112,6 +117,9 @@
                             </div>
                             
                             <div class="loop-control">
+                                <button id="downloadBtn" class="control-btn" title="下载解析后的视频到本地">
+                                    <span class="icon">📥</span> 下载视频
+                                </button>
                                 <button id="loopBtn" class="control-btn" title="循环播放当前句子">
                                     <span class="icon">🔄</span> 精听模式
                                 </button>

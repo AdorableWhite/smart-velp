@@ -33,7 +33,8 @@ let state = {
     pollingInterval: null,
     playbackRate: 1.0,
     isLooping: false,
-    fontSize: 24
+    fontSize: 24,
+    autoDownload: localStorage.getItem('autoDownload') === 'true'
 };
 
 // DOM Elements
@@ -52,10 +53,12 @@ const elements = {
     speedSlider: document.getElementById('speedSlider'),
     speedValue: document.getElementById('speedValue'),
     loopBtn: document.getElementById('loopBtn'),
+    downloadBtn: document.getElementById('downloadBtn'),
     fullScreenBtn: document.getElementById('fullScreenBtn'),
     fontSizeSlider: document.getElementById('fontSizeSlider'),
     fontSizeValue: document.getElementById('fontSizeValue'),
     clearFailedBtn: document.getElementById('clearFailedBtn'),
+    autoDownloadToggle: document.getElementById('autoDownloadToggle'),
     speedBtns: document.querySelectorAll('.speed-btn'),
     videoContainer: document.getElementById('videoContainer'),
     videoSubtitleOverlay: document.getElementById('videoSubtitleOverlay'),
@@ -113,6 +116,14 @@ function init() {
     // Loop Control Listener
     elements.loopBtn.addEventListener('click', toggleLoop);
 
+    // Download Button Listener
+    elements.downloadBtn.addEventListener('click', () => {
+        const task = state.tasks.find(t => t.taskId === state.currentTaskId);
+        if (task && task.videoId) {
+            downloadVideo(task.videoId, task.title || 'video');
+        }
+    });
+
     // Fullscreen Control Listener
     elements.fullScreenBtn.addEventListener('click', toggleFullScreen);
 
@@ -123,6 +134,12 @@ function init() {
     });
 
     elements.clearFailedBtn.addEventListener('click', clearFailedTasks);
+
+    elements.autoDownloadToggle.checked = state.autoDownload;
+    elements.autoDownloadToggle.addEventListener('change', (e) => {
+        state.autoDownload = e.target.checked;
+        localStorage.setItem('autoDownload', state.autoDownload);
+    });
 
     // Fullscreen Change Listener
     const handleFullscreenChange = () => {
@@ -204,7 +221,7 @@ function setFontSize(size) {
  */
 async function loadTasks() {
     try {
-        const res = await fetch(`${API_BASE}${API_PREFIX}/tasks`);
+        const res = await fetch(`${API_BASE}${API_PREFIX}/parser/tasks`);
         if (!res.ok) throw new Error('Failed to fetch tasks');
         
         let tasks = await res.json();
@@ -334,7 +351,7 @@ function showModal(title, message, options = { showCancel: true, confirmText: '�
  */
 async function deleteTask(taskId) {
     try {
-        const res = await fetch(`${API_BASE}${API_PREFIX}/tasks/${taskId}`, {
+        const res = await fetch(`${API_BASE}${API_PREFIX}/parser/tasks/${taskId}`, {
             method: 'DELETE'
         });
         if (res.ok) {
@@ -360,7 +377,7 @@ async function clearFailedTasks() {
     if (!confirmed) return;
     
     try {
-        const res = await fetch(`${API_BASE}${API_PREFIX}/tasks/failed`, {
+        const res = await fetch(`${API_BASE}${API_PREFIX}/parser/tasks/failed`, {
             method: 'DELETE'
         });
         if (res.ok) {
@@ -385,6 +402,53 @@ function getStatusLabel(status) {
 }
 
 /**
+ * Download video file to local machine
+ */
+async function downloadVideo(videoId, title) {
+    const downloadUrl = `${API_BASE}${API_PREFIX}/course/${videoId}/download`;
+    const fileName = `${title.replace(/[/\\?%*:|"<>]/g, '_')}.mp4`;
+
+    // Check if showSaveFilePicker is supported (modern browsers)
+    if (window.showSaveFilePicker) {
+        try {
+            const handle = await window.showSaveFilePicker({
+                suggestedName: fileName,
+                types: [{
+                    description: 'Video File',
+                    accept: { 'video/mp4': ['.mp4'] },
+                }],
+            });
+            
+            const response = await fetch(downloadUrl);
+            const writable = await handle.createWritable();
+            await response.body.pipeTo(writable);
+        } catch (e) {
+            // User cancelled or error
+            console.log('Save file picker cancelled or failed:', e);
+            if (e.name !== 'AbortError') {
+                // Fallback to traditional download
+                triggerTraditionalDownload(downloadUrl, fileName);
+            }
+        }
+    } else {
+        // Fallback for older browsers
+        triggerTraditionalDownload(downloadUrl, fileName);
+    }
+}
+
+/**
+ * Traditional download trigger
+ */
+function triggerTraditionalDownload(url, fileName) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+/**
  * Handle task selection
  */
 async function selectTask(taskId) {
@@ -394,7 +458,7 @@ async function selectTask(taskId) {
     
     try {
         // First get task info to get videoId
-        const resTask = await fetch(`${API_BASE}${API_PREFIX}/status/${taskId}`);
+        const resTask = await fetch(`${API_BASE}${API_PREFIX}/parser/status/${taskId}`);
         const taskData = await resTask.json();
         
         if (taskData.videoId) {
@@ -421,7 +485,7 @@ async function startParser() {
     elements.submitBtn.innerText = '提交中...';
 
     try {
-        const res = await fetch(`${API_BASE}${API_PREFIX}/analyze`, {
+        const res = await fetch(`${API_BASE}${API_PREFIX}/parser/analyze`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url })
@@ -453,7 +517,7 @@ function startPolling(taskId) {
 
     state.pollingInterval = setInterval(async () => {
         try {
-            const res = await fetch(`${API_BASE}${API_PREFIX}/status/${taskId}`);
+            const res = await fetch(`${API_BASE}${API_PREFIX}/parser/status/${taskId}`);
             const data = await res.json();
 
             elements.progressFill.style.width = data.progress + '%';
@@ -463,6 +527,11 @@ function startPolling(taskId) {
                 clearInterval(state.pollingInterval);
                 loadTasks();
                 selectTask(taskId);
+                
+                // Trigger auto-download if enabled
+                if (state.autoDownload && data.videoId) {
+                    downloadVideo(data.videoId, data.title || 'video');
+                }
             } else if (data.status === 'failed') {
                 clearInterval(state.pollingInterval);
                 elements.statusText.innerText = '处理失败: ' + (data.error || '未知错误');
