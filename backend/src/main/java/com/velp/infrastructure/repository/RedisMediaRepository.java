@@ -33,16 +33,18 @@ public class RedisMediaRepository implements MediaRepository {
     private static final String REDIS_KEY_PREFIX = "velp:task:";
 
     @Override
-    public void saveTaskStatus(String taskId, String status, int progress, String videoId, String error, String url, String title) {
+    public void saveTaskStatus(String taskId, String status, int progress, String videoId, String error, String url, String title, String sourceLang, String targetLang) {
         try {
             // 1. 获取现有状态，保留创建时间等不变量
             TaskStatus existing = getTaskStatus(taskId).orElse(null);
             String finalUrl = (url != null) ? url : (existing != null ? existing.url() : "");
             String finalTitle = (title != null) ? title : (existing != null ? existing.title() : "");
+            String finalSourceLang = (sourceLang != null) ? sourceLang : (existing != null ? existing.sourceLang() : "en");
+            String finalTargetLang = (targetLang != null) ? targetLang : (existing != null ? existing.targetLang() : "zh-CN");
             long createdAt = (existing != null && existing.createdAt() > 0) ? existing.createdAt() : System.currentTimeMillis();
 
             // 2. 构建新的状态对象
-            TaskStatus taskStatus = new TaskStatus(status, progress, videoId, error, finalUrl, finalTitle, createdAt);
+            TaskStatus taskStatus = new TaskStatus(status, progress, videoId, error, finalUrl, finalTitle, finalSourceLang, finalTargetLang, createdAt);
             
             // 3. 将对象序列化为 JSON 字符串并存入 Redis
             String json = objectMapper.writeValueAsString(taskStatus);
@@ -112,6 +114,8 @@ public class RedisMediaRepository implements MediaRepository {
                                 status.videoId(),
                                 status.url(),
                                 status.title(),
+                                status.sourceLang(),
+                                status.targetLang(),
                                 status.createdAt()
                         );
                     } catch (Exception e) {

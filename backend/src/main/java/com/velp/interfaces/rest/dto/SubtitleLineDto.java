@@ -12,4 +12,8 @@ public class SubtitleLineDto {
     private double endTime;
     private String en;
     private String cn;
+    private String sourceText;
+    private String targetText;
+    private String sourceLang;
+    private String targetLang;
 }

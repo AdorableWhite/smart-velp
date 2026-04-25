@@ -1,85 +1,224 @@
-# Smart VELP (Video English Learning Platform)
+# Smart VELP
 
-Smart VELP 是一个基于 AI 的 YouTube 视频学习平台，旨在通过自动化的视频解析、字幕提取和 AI 翻译，为用户提供沉浸式的双语学习体验。
+Smart VELP 是一个视频英语学习平台，前端基于 Vite，后端基于 Spring Boot。前端通过 `/api` 和 `/downloads` 代理到本地后端，因此本地开发时建议前后端一起启动。
 
----
+## 项目结构
 
-## 🚀 项目进度 (PRD 执行情况)
-
-| 需求模块 | 功能描述 | 状态 | 更新日期 |
-| :--- | :--- | :--- | :--- |
-| **核心解析** | 基于 yt-dlp 的 YouTube 视频/字幕下载 | ✅ 已完成 | 2026-01-28 |
-| **AI 翻译** | 集成豆包 (Doubao) 大模型，支持 JSON 格式化输出 | ✅ 已完成 | 2026-01-29 |
-| **任务管理** | 并行任务处理、基于 URL 的成功任务去重、任务元数据磁盘持久化 | ✅ 已完成 | 2026-01-29 |
-| **前端界面** | 莫兰迪色系、左侧任务列表显示视频标题、鼠标悬停详情、右侧播放器联动 | ✅ 已完成 | 2026-01-29 |
-| **CI/CD** | GitHub Actions + Docker + GHCR 自动化部署 | ✅ 已完成 | 2026-01-29 |
-| **持久化** | 任务状态内存存储与文件系统持久化 | 🟡 优化中 | 2026-01-29 |
-
----
-
-## 🛠 使用方法介绍
-
-### 1. 环境准备
-*   **后端**: JDK 17+, Maven, Python 3, yt-dlp。
-*   **前端**: Node.js 20+ (Vite)。
-*   **API Key**: 需要 [火山引擎 Ark 平台](https://www.volcengine.com/product/ark) 的 API Key 和推理接入点 ID。
-
-### 2. 本地启动
-
-#### 后端 (Spring Boot)
-1. 进入 `backend` 目录。
-2. 在 `application.properties` 中配置您的 `DOUBAO_API_KEY` 和 `DOUBAO_MODEL` (接入点 ID)。
-3. 运行：`mvn spring-boot:run`。
-4. 后端默认运行在 `http://localhost:9090`。
-
-#### 前端 (Vite)
-1. 进入 `frontend` 目录。
-2. 安装依赖：`npm install`。
-3. 启动：`npm run dev`。
-4. 访问：`http://localhost:5173`。
-
-#### 跨平台启动脚本 (Windows/macOS/Linux)
-项目内置脚本可自动处理 Maven 缺失的问题（优先使用系统 Maven，否则解压根目录的 `apache-maven-3.9.6-bin.tar.gz`）。
-
-- 后端：
-  - Windows：`powershell -ExecutionPolicy Bypass -File scripts/start-backend.ps1`
-  - macOS/Linux：`bash scripts/start-backend.sh`
-- 前端：
-  - Windows：`powershell -ExecutionPolicy Bypass -File scripts/start-frontend.ps1`
-  - macOS/Linux：`bash scripts/start-frontend.sh`
-
-如需指定命令路径，可设置环境变量：
-- `VELP_YTDLP_PATH`（Windows 可指向 `yt-dlp.exe`）
-- `VELP_PYTHON_PATH`（macOS/Linux 通常是 `python3`）
-
-### 3. 操作流程
-1. **提交任务**: 在页面顶部的输入框粘贴 YouTube 视频链接，点击“开始解析”。
-2. **监控进度**: 页面会自动切换到进度监控视图，左侧任务列表会同步出现“处理中”的任务。
-3. **开始学习**: 
-   - 任务完成后，左侧列表指示灯变绿。
-   - 点击已完成的任务，右侧将加载视频播放器。
-   - 点击右侧字幕行，视频将自动跳转到对应时间点。
-   - 使用右上角切换“双语”、“纯英”、“纯中”模式。
-
----
-
-## 📝 更新日志
-
-### [2026-01-29]
-- **优化**: 改进豆包 API 调用，强制要求返回 JSON 数组格式，极大提升了翻译解析的稳定性。
-- **功能**: 实现左侧任务列表，支持多任务并行展示与点选切换。
-- **UI**: 全面应用“莫兰迪”色系，重构 SPA 风格布局。
-- **逻辑**: 增加任务去重逻辑，相同链接解析成功后不再重复执行。
-
-### [2026-01-28]
-- **功能**: 初始化 CI/CD 流程，编写 Dockerfile 和 GitHub Actions 工作流。
-- **功能**: 实现基础的视频解析与双语字幕合并逻辑。
-
----
-
-## 📦 部署架构
-项目支持 Docker 一键部署：
-```bash
-docker compose up -d
+```text
+smart-velp/
+|- backend/                 # Spring Boot 后端，默认端口 9090
+|- frontend/                # Vite 前端，默认端口 9091
+|- scripts/                 # 本地启动脚本
+|- package.json             # 根目录也保留了一套前端脚本
+|- vite.config.js           # 根目录 Vite 配置
 ```
-详情请参考 `DEPLOY_NOTES.md`。
+
+说明：
+
+- 推荐使用 `frontend/` 目录作为前端本地开发入口。
+- `scripts/start-frontend.ps1` 和 `scripts/start-frontend.sh` 也都是进入 `frontend/` 后再启动。
+- 前端本地开发端口是 `9091`，不是默认的 `5173`。
+
+## 环境要求
+
+### 前端
+
+- Node.js 18 及以上
+- npm 9 及以上
+
+### 后端
+
+- JDK 17
+- Maven 3.9+
+- Python 3
+- `yt-dlp`
+
+说明：
+
+- 如果本机没有 Maven，Windows 启动脚本会自动下载并放到 `.tools/` 下。
+- 如果本机没有 `yt-dlp`，Windows 启动脚本也会自动下载 `yt-dlp.exe`。
+
+## 前端本地启动
+
+这是当前项目最直接、最推荐的前端本地启动方式。
+
+### 方式一：直接进入 `frontend` 目录启动
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+启动后访问：
+
+```text
+http://localhost:9091
+```
+
+### 方式二：使用项目自带脚本启动
+
+Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start-frontend.ps1
+```
+
+macOS / Linux:
+
+```bash
+bash scripts/start-frontend.sh
+```
+
+脚本行为：
+
+- 自动进入 `frontend/`
+- 如果没有 `node_modules`，先执行 `npm install`
+- 然后执行 `npm run dev`
+
+## 前后端联调启动
+
+由于前端会把 `/api` 和 `/downloads` 代理到本地后端 `http://localhost:9090`，所以要正常提交解析任务，后端也需要启动。
+
+### 1. 启动后端
+
+Windows 推荐：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start-backend.ps1
+```
+
+或者手动启动：
+
+```bash
+cd backend
+mvn clean spring-boot:run
+```
+
+后端默认地址：
+
+```text
+http://localhost:9090
+```
+
+### 2. 启动前端
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+前端默认地址：
+
+```text
+http://localhost:9091
+```
+
+### 3. 打开页面验证
+
+浏览器访问：
+
+```text
+http://localhost:9091
+```
+
+如果前后端都正常启动：
+
+- 页面可以加载任务列表
+- 提交 YouTube 链接后会调用后端接口
+- 视频和下载资源会走 `/downloads` 代理
+
+## 后端配置说明
+
+后端配置文件位置：
+
+[`backend/src/main/resources/application.properties`](C:/Users/zhaoxx/IdeaProjects/github/owner/smart-velp/backend/src/main/resources/application.properties)
+
+当前项目里重点配置如下：
+
+- `server.port=9090`
+- `velp.repository.type=memory`
+- `velp.python.path`
+- `velp.ytdlp.path`
+- 各类 LLM 提供商配置，如 Doubao / DeepSeek / OpenAI Compatible
+
+如果你只是想看前端页面是否能启动，前端单独运行也可以；但这时涉及接口请求的功能会失败。
+
+## 页面使用方式
+
+当前前端本地启动后，常见使用流程如下：
+
+1. 打开 `http://localhost:9091`
+2. 在输入框中粘贴 YouTube 视频链接
+3. 点击开始解析
+4. 左侧任务列表会展示任务状态
+5. 任务完成后点击任务，右侧加载播放器和字幕
+6. 可以切换双语、英文、中文字幕模式
+7. 可以调整播放倍速、字幕字号、是否循环句子
+8. 可以下载处理后的视频资源
+
+## 常用命令
+
+### 前端开发
+
+```bash
+cd frontend
+npm run dev
+```
+
+### 前端打包
+
+```bash
+cd frontend
+npm run build
+```
+
+### 前端本地预览打包结果
+
+```bash
+cd frontend
+npm run preview
+```
+
+### 后端开发运行
+
+```bash
+cd backend
+mvn clean spring-boot:run
+```
+
+## 常见问题
+
+### 1. 前端页面能打开，但提交任务失败
+
+通常是后端没有启动，或者后端没有运行在 `9090`。
+
+请检查：
+
+- 后端是否已经启动
+- `backend` 是否监听在 `http://localhost:9090`
+- 前端是否运行在 `http://localhost:9091`
+
+### 2. 前端启动后不是 9091
+
+当前仓库的 Vite 配置里已经固定端口为 `9091`。如果你看到其他端口，通常是命令没有在当前项目目录执行，或者启动的不是这个仓库里的前端。
+
+### 3. 只启动前端能不能用
+
+可以打开页面和看静态界面，但以下功能依赖后端：
+
+- 任务提交
+- 任务状态轮询
+- 视频下载
+- 字幕和课程详情加载
+
+## 推荐使用方式
+
+如果你现在是要在本地开发这个项目，建议直接按下面顺序执行：
+
+1. 启动后端：`powershell -ExecutionPolicy Bypass -File scripts/start-backend.ps1`
+2. 启动前端：`powershell -ExecutionPolicy Bypass -File scripts/start-frontend.ps1`
+3. 打开 `http://localhost:9091`
+
+这样最贴近当前仓库现有配置，也最不容易踩路径和依赖问题。

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.velp.common.constants.AppConstants;
 import com.velp.domain.model.SubtitleLine;
+import com.velp.domain.service.TranslationOptions;
 import com.velp.domain.service.TranslationService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -49,18 +50,23 @@ public class LlmTranslationService implements TranslationService {
     }
 
     @Override
-    public void translate(List<SubtitleLine> subtitles) {
-        translate(subtitles, null);
-    }
+    public void translate(List<SubtitleLine> subtitles, TranslationOptions options, java.util.function.Consumer<Integer> progressCallback) {
+        String effectiveApiKey = getEffectiveValue(options == null ? null : options.getApiKey(), apiKey);
+        String effectiveBaseUrl = getEffectiveValue(options == null ? null : options.getBaseUrl(), baseUrl);
+        String effectiveModel = getEffectiveValue(options == null ? null : options.getModel(), model);
+        String sourceLang = getEffectiveValue(options == null ? null : options.getSourceLang(), "en");
+        String targetLang = getEffectiveValue(options == null ? null : options.getTargetLang(), "zh-CN");
 
-    @Override
-    public void translate(List<SubtitleLine> subtitles, java.util.function.Consumer<Integer> progressCallback) {
-        if (!enabled || apiKey == null || apiKey.isEmpty() || apiKey.startsWith("sk-your") || baseUrl == null || baseUrl.isEmpty()) {
+        boolean runtimeConfigured = effectiveApiKey != null && !effectiveApiKey.isEmpty()
+                && effectiveBaseUrl != null && !effectiveBaseUrl.isEmpty();
+        if ((!enabled && !runtimeConfigured) || effectiveApiKey == null || effectiveApiKey.isEmpty() || effectiveApiKey.startsWith("sk-your") || effectiveBaseUrl == null || effectiveBaseUrl.isEmpty()) {
             throw new IllegalStateException("LLM provider disabled or missing configuration");
         }
 
         List<SubtitleLine> linesToTranslate = subtitles.stream()
-                .filter(s -> (s.getCn() == null || s.getCn().isEmpty()) && s.getEn() != null && !s.getEn().isEmpty())
+                .filter(s -> (s.getEffectiveTargetText() == null || s.getEffectiveTargetText().isEmpty())
+                        && s.getEffectiveSourceText() != null
+                        && !s.getEffectiveSourceText().isEmpty())
                 .collect(Collectors.toList());
 
         if (linesToTranslate.isEmpty()) {
@@ -71,7 +77,7 @@ public class LlmTranslationService implements TranslationService {
         }
 
         try {
-            translateBatch(linesToTranslate);
+            translateBatch(linesToTranslate, effectiveApiKey, effectiveBaseUrl, effectiveModel, sourceLang, targetLang);
             if (progressCallback != null) {
                 progressCallback.accept(100);
             }
@@ -80,17 +86,17 @@ public class LlmTranslationService implements TranslationService {
         }
     }
 
-    private void translateBatch(List<SubtitleLine> batch) throws Exception {
+    private void translateBatch(List<SubtitleLine> batch, String effectiveApiKey, String effectiveBaseUrl, String effectiveModel, String sourceLang, String targetLang) throws Exception {
         List<String> englishLines = batch.stream()
-                .map(SubtitleLine::getEn)
+                .map(SubtitleLine::getEffectiveSourceText)
                 .collect(Collectors.toList());
         String inputJson = objectMapper.writeValueAsString(englishLines);
 
-        String systemPrompt = "You are a professional subtitle translator. Translate English to Simplified Chinese. " +
+        String systemPrompt = "You are a professional subtitle translator. Translate subtitle lines from " + sourceLang + " to " + targetLang + ". " +
                 "Output ONLY a JSON array of strings with the same length as the input array. No markdown, no explanation.";
 
         ObjectNode requestBody = objectMapper.createObjectNode();
-        requestBody.put("model", model);
+        requestBody.put("model", effectiveModel);
         requestBody.put("temperature", 0.3);
 
         ArrayNode messages = requestBody.putArray("messages");
@@ -99,12 +105,12 @@ public class LlmTranslationService implements TranslationService {
 
         String requestJson = objectMapper.writeValueAsString(requestBody);
 
-        String apiUrl = baseUrl + (baseUrl.endsWith("/") ? "chat/completions" : "/chat/completions");
+        String apiUrl = effectiveBaseUrl + (effectiveBaseUrl.endsWith("/") ? "chat/completions" : "/chat/completions");
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(apiUrl))
                 .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + apiKey)
+                .header("Authorization", "Bearer " + effectiveApiKey)
                 .timeout(Duration.ofSeconds(requestTimeoutSeconds))
                 .POST(HttpRequest.BodyPublishers.ofString(requestJson))
                 .build();
@@ -116,11 +122,15 @@ public class LlmTranslationService implements TranslationService {
             String content = root.path("choices").get(0).path("message").path("content").asText();
             List<String> translations = responseParser.parseAndNormalize(content, batch.size(), AppConstants.Translation.PROVIDER_LLM);
             for (int j = 0; j < translations.size(); j++) {
-                String translated = translations.get(j);
-                batch.get(j).setCn(translated == null ? "" : translated.trim());
-            }
+                    String translated = translations.get(j);
+                    batch.get(j).setTargetPayload(translated == null ? "" : translated.trim(), targetLang);
+                }
         } else {
             throw new Exception("HTTP " + response.statusCode() + ": " + response.body());
         }
+    }
+
+    private String getEffectiveValue(String runtimeValue, String fallbackValue) {
+        return runtimeValue != null && !runtimeValue.isBlank() ? runtimeValue : fallbackValue;
     }
 }

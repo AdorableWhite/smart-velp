@@ -1,6 +1,7 @@
 package com.velp.application;
 
 import com.velp.domain.model.SubtitleLine;
+import com.velp.domain.service.TranslationOptions;
 import com.velp.domain.service.TranslationService;
 import com.velp.infrastructure.factory.TranslationServiceFactory;
 import lombok.extern.slf4j.Slf4j;
@@ -54,19 +55,31 @@ public class TranslationManager implements TranslationService {
     }
 
     @Override
-    public void translate(List<SubtitleLine> subtitles) {
-        translate(subtitles, null);
-    }
-
-    @Override
-    public void translate(List<SubtitleLine> subtitles, java.util.function.Consumer<Integer> progressCallback) {
+    public void translate(List<SubtitleLine> subtitles, TranslationOptions options, java.util.function.Consumer<Integer> progressCallback) {
         if (subtitles == null || subtitles.isEmpty()) {
             if (progressCallback != null) progressCallback.accept(100);
             return;
         }
 
+        TranslationOptions runtimeOptions = options == null ? TranslationOptions.defaults() : options;
+
+        if (runtimeOptions.getTargetLang() != null
+                && runtimeOptions.getSourceLang() != null
+                && runtimeOptions.getTargetLang().equalsIgnoreCase(runtimeOptions.getSourceLang())) {
+            subtitles.forEach(line -> {
+                if ((line.getEffectiveTargetText() == null || line.getEffectiveTargetText().isEmpty())
+                        && line.getEffectiveSourceText() != null) {
+                    line.setTargetPayload(line.getEffectiveSourceText(), runtimeOptions.getTargetLang());
+                }
+            });
+            if (progressCallback != null) progressCallback.accept(100);
+            return;
+        }
+
         List<SubtitleLine> candidates = subtitles.stream()
-                .filter(s -> (s.getCn() == null || s.getCn().isEmpty()) && s.getEn() != null && !s.getEn().isEmpty())
+                .filter(s -> (s.getEffectiveTargetText() == null || s.getEffectiveTargetText().isEmpty())
+                        && s.getEffectiveSourceText() != null
+                        && !s.getEffectiveSourceText().isEmpty())
                 .collect(Collectors.toList());
 
         if (candidates.isEmpty()) {
@@ -75,9 +88,11 @@ public class TranslationManager implements TranslationService {
         }
 
         int totalToTranslate = candidates.size();
-        applyCache(candidates);
+        applyCache(candidates, runtimeOptions);
         candidates = candidates.stream()
-                .filter(s -> (s.getCn() == null || s.getCn().isEmpty()) && s.getEn() != null && !s.getEn().isEmpty())
+                .filter(s -> (s.getEffectiveTargetText() == null || s.getEffectiveTargetText().isEmpty())
+                        && s.getEffectiveSourceText() != null
+                        && !s.getEffectiveSourceText().isEmpty())
                 .collect(Collectors.toList());
 
         int remaining = candidates.size();
@@ -91,7 +106,7 @@ public class TranslationManager implements TranslationService {
             return;
         }
 
-        List<String> providerChain = buildProviderChain();
+        List<String> providerChain = buildProviderChain(runtimeOptions);
         if (providerChain.isEmpty()) {
             throw new RuntimeException("No translation providers configured");
         }
@@ -103,8 +118,8 @@ public class TranslationManager implements TranslationService {
             if (batch.isEmpty()) {
                 continue;
             }
-            translateBatchWithFallback(batch, providerChain);
-            updateCache(batch);
+            translateBatchWithFallback(batch, providerChain, runtimeOptions);
+            updateCache(batch, runtimeOptions);
             translatedCount += batch.size();
             if (progressCallback != null) {
                 progressCallback.accept(Math.min(100, translatedCount * 100 / totalToTranslate));
@@ -112,9 +127,15 @@ public class TranslationManager implements TranslationService {
         }
     }
 
-    private List<String> buildProviderChain() {
+    private List<String> buildProviderChain(TranslationOptions options) {
         List<String> providers = new ArrayList<>();
         Set<String> seen = new HashSet<>();
+        String runtimePreferred = options == null ? null : options.normalizedProvider();
+        if (runtimePreferred != null && !runtimePreferred.isBlank()) {
+            if (seen.add(runtimePreferred.toLowerCase())) {
+                providers.add(runtimePreferred);
+            }
+        }
         if (preferredProvider != null && !preferredProvider.trim().isEmpty()) {
             String normalized = preferredProvider.trim();
             if (seen.add(normalized.toLowerCase())) {
@@ -134,7 +155,7 @@ public class TranslationManager implements TranslationService {
         return providers;
     }
 
-    private void translateBatchWithFallback(List<SubtitleLine> batch, List<String> providerChain) {
+    private void translateBatchWithFallback(List<SubtitleLine> batch, List<String> providerChain, TranslationOptions options) {
         RuntimeException lastError = null;
         for (String provider : providerChain) {
             if (isCircuitOpen(provider)) {
@@ -149,7 +170,7 @@ public class TranslationManager implements TranslationService {
             for (int attempt = 1; attempt <= Math.max(1, maxAttempts); attempt++) {
                 long start = System.nanoTime();
                 try {
-                    service.translate(batch);
+                    service.translate(batch, options);
                     long elapsedMs = (System.nanoTime() - start) / 1_000_000;
                     log.info("Provider {} translated batch size {} in {} ms (attempt {})", provider, batch.size(), elapsedMs, attempt);
                     recordSuccess(provider);
@@ -175,16 +196,17 @@ public class TranslationManager implements TranslationService {
         throw new RuntimeException("All translation providers unavailable for current batch");
     }
 
-    private int applyCache(List<SubtitleLine> candidates) {
+    private int applyCache(List<SubtitleLine> candidates, TranslationOptions options) {
         int hits = 0;
         for (SubtitleLine line : candidates) {
-            if (line.getEn() == null || line.getEn().isEmpty()) {
+            String sourceText = line.getEffectiveSourceText();
+            if (sourceText == null || sourceText.isEmpty()) {
                 continue;
             }
-            String key = hashKey(line.getEn());
+            String key = hashKey(sourceText, options.getTargetLang());
             String cached = translationCache.get(key);
             if (cached != null && !cached.isEmpty()) {
-                line.setCn(cached);
+                line.setTargetPayload(cached, options.getTargetLang());
                 hits++;
             }
         }
@@ -194,20 +216,21 @@ public class TranslationManager implements TranslationService {
         return hits;
     }
 
-    private void updateCache(List<SubtitleLine> batch) {
+    private void updateCache(List<SubtitleLine> batch, TranslationOptions options) {
         for (SubtitleLine line : batch) {
-            if (line.getEn() == null || line.getEn().isEmpty()) continue;
-            String cn = line.getCn();
-            if (cn != null && !cn.isEmpty()) {
-                translationCache.put(hashKey(line.getEn()), cn);
+            String sourceText = line.getEffectiveSourceText();
+            if (sourceText == null || sourceText.isEmpty()) continue;
+            String targetText = line.getEffectiveTargetText();
+            if (targetText != null && !targetText.isEmpty()) {
+                translationCache.put(hashKey(sourceText, options.getTargetLang()), targetText);
             }
         }
     }
 
-    private String hashKey(String text) {
+    private String hashKey(String text, String targetLang) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hashed = digest.digest(text.getBytes(StandardCharsets.UTF_8));
+            byte[] hashed = digest.digest((text + "::" + (targetLang == null ? "" : targetLang)).getBytes(StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder(hashed.length * 2);
             for (byte b : hashed) {
                 sb.append(String.format("%02x", b));

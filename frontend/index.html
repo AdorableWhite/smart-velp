@@ -1,190 +1,22 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VELP - CYBERPUNK VIDEO LEARNING</title>
-    
-    <!-- 1. 预连接加速域名解析 -->
-    <link rel="preconnect" href="https://fonts.geekzu.org">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    
-    <!-- 2. 引入科技感字体 (增加 display=swap 确保文本立即显示) -->
-    <link href="https://fonts.geekzu.org/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    
-    <!-- 3. 内联关键 CSS，解决 LCP 延迟 -->
-    <style>
-        :root { --color-bg: #050505; --color-primary: #00f3ff; }
-        body { background-color: var(--color-bg); margin: 0; color: #e0e0e0; font-family: 'JetBrains Mono', monospace; }
-        .welcome-view { display: flex; justify-content: center; align-items: center; height: 100vh; background: radial-gradient(circle at center, rgba(0, 243, 255, 0.05) 0%, transparent 70%); }
-        .welcome-card { text-align: center; border: 1px solid var(--color-primary); padding: 40px; box-shadow: 0 0 15px rgba(0, 243, 255, 0.3); }
-        .glitch { font-size: 3rem; color: var(--color-primary); text-transform: uppercase; letter-spacing: 10px; }
-        .hidden { display: none !important; }
-    </style>
-    
-    <link rel="stylesheet" href="./style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f3ef">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Smart VELP">
+  <meta
+    name="description"
+    content="Smart VELP helps you learn from online and local videos with a focused Apple-inspired learning experience."
+  >
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <title>Smart VELP</title>
 </head>
 <body>
-    <!-- 背景扫描线效果 -->
-    <div class="scanlines"></div>
-
-    <div class="app-layout">
-        <!-- 左侧任务列表 -->
-        <aside class="sidebar">
-            <div class="sidebar-header">
-                <div class="logo-area">
-                    <span class="system-status">ONLINE</span>
-                    <h2>任务列表</h2>
-                </div>
-                <div class="header-actions">
-                    <label class="auto-download-label" title="任务完成后自动下载到本地">
-                        <input type="checkbox" id="autoDownloadToggle"> 自动下载
-                    </label>
-                    <button id="clearFailedBtn" class="clear-btn" title="清理所有解析失败的任务">清理异常</button>
-                </div>
-            </div>
-            
-            <div id="taskList" class="task-list">
-                <div class="loading-tasks">正在接入数据库...</div>
-            </div>
-
-            <!-- 新增：统计面板 -->
-            <div class="sidebar-footer">
-                <div class="stats-panel">
-                    <div class="stat-item">
-                        <span class="stat-label">已学习视频</span>
-                        <span id="statCompleted" class="stat-value">0</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-label">正在处理</span>
-                        <span id="statProcessing" class="stat-value">0</span>
-                    </div>
-                </div>
-            </div>
-        </aside>
-
-        <!-- 右侧主内容区 -->
-        <main class="main-content">
-            <!-- 顶部输入框 -->
-            <header class="top-bar">
-                <div class="input-group">
-                    <div class="input-prefix">YOUTUBE_URL</div>
-                    <input type="text" id="youtubeUrl" placeholder="PASTE_LINK_HERE_..." />
-                    <button id="submitBtn">开始解析</button>
-                </div>
-            </header>
-
-            <!-- 欢迎/空状态页面 -->
-            <div id="welcomeView" class="view-container welcome-view">
-                <div class="welcome-card">
-                    <div class="glitch-wrapper">
-                        <h1 class="glitch" data-text="Smart VELP">Smart VELP</h1>
-                    </div>
-                    <p>接入神经链接，输入视频地址开始沉浸式学习。</p>
-                    <div class="decoration-lines">
-                        <span></span><span></span><span></span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 状态显示区 -->
-            <div id="statusView" class="view-container hidden">
-                <div class="status-card">
-                    <div class="status-header">
-                        <span class="blink">●</span> DATA_PROCESSING
-                    </div>
-                    <p id="statusText">正在同步核心数据...</p>
-                    <div class="progress-bar">
-                        <div id="progressFill" class="progress-fill"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 视频播放区 -->
-            <div id="playerView" class="view-container hidden">
-                <div class="player-layout">
-                    <div class="video-container" id="videoContainer">
-                        <video id="mainVideo" controls></video>
-                        <div id="videoSubtitleOverlay" class="video-subtitle-overlay hidden">
-                            <div class="overlay-en"></div>
-                            <div class="overlay-cn"></div>
-                        </div>
-                        <!-- 视频内装饰 -->
-                        <div class="video-hud">
-                            <div class="hud-corner top-left"></div>
-                            <div class="hud-corner top-right"></div>
-                            <div class="hud-corner bottom-left"></div>
-                            <div class="hud-corner bottom-right"></div>
-                        </div>
-                    </div>
-                    
-                    <div class="subtitle-controls">
-                        <div class="playback-controls">
-                            <div class="speed-control">
-                                <span class="label">P_RATE:</span>
-                                <div class="speed-buttons">
-                                    <button class="speed-btn" data-speed="0.75">0.75</button>
-                                    <button class="speed-btn active" data-speed="1">1</button>
-                                    <button class="speed-btn" data-speed="1.5">1.5</button>
-                                    <button class="speed-btn" data-speed="2">2</button>
-                                </div>
-                                <input type="range" id="speedSlider" min="0.5" max="4" step="0.1" value="1">
-                                <span id="speedValue">1.0x</span>
-                            </div>
-                            
-                            <div class="loop-control">
-                                <button id="downloadBtn" class="control-btn" title="下载解析后的视频到本地">
-                                    <span class="icon">📥</span> 下载视频
-                                </button>
-                                <button id="loopBtn" class="control-btn" title="循环播放当前句子">
-                                    <span class="icon">🔄</span> 精听模式
-                                </button>
-                                <button id="fullScreenBtn" class="control-btn">
-                                    <span class="icon">⛶</span> 全屏模式
-                                </button>
-                            </div>
-                            
-                            <div class="subtitle-config">
-                                <span class="label">SUB_SIZE:</span>
-                                <input type="range" id="fontSizeSlider" min="12" max="48" step="1" value="24">
-                                <span id="fontSizeValue">24px</span>
-                            </div>
-                        </div>
-                        <div class="mode-select-area">
-                            <span class="label">VIEW_MODE:</span>
-                            <select id="subModeSelect">
-                                <option value="dual">DUAL_LANG</option>
-                                <option value="en">ENGLISH_ONLY</option>
-                                <option value="cn">CHINESE_ONLY</option>
-                                <option value="none">HIDDEN</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div id="subtitleList" class="subtitle-list">
-                        <!-- 字幕项将通过 JS 动态加载 -->
-                    </div>
-                </div>
-            </div>
-        </main>
-    </div>
-
-    <script type="module" src="./app.js"></script>
-
-    <!-- 自定义弹窗 -->
-    <div id="customModal" class="modal-overlay hidden">
-        <div class="modal-card">
-            <div class="modal-header">
-                <h3 id="modalTitle">SYSTEM_PROMPT</h3>
-            </div>
-            <div class="modal-body">
-                <p id="modalMessage">READY_FOR_COMMAND</p>
-            </div>
-            <div class="modal-footer">
-                <button id="modalCancelBtn" class="modal-btn secondary">ABORT</button>
-                <button id="modalConfirmBtn" class="modal-btn primary">CONFIRM</button>
-            </div>
-        </div>
-    </div>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

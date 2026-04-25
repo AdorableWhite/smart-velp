@@ -12,4 +12,7 @@ public class CourseDetailResponse {
     private String title;
     private String videoUrl;
     private List<SubtitleLineDto> subtitles;
+    private String sourceLang;
+    private String targetLang;
+    private boolean hasVideo;
 }

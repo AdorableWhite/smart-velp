@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.velp.common.constants.AppConstants;
 import com.velp.domain.model.SubtitleLine;
+import com.velp.domain.service.TranslationOptions;
 import com.velp.domain.service.TranslationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -51,18 +52,21 @@ public class DoubaoTranslationService implements TranslationService {
     }
 
     @Override
-    public void translate(List<SubtitleLine> subtitles) {
-        translate(subtitles, null);
-    }
+    public void translate(List<SubtitleLine> subtitles, TranslationOptions options, java.util.function.Consumer<Integer> progressCallback) {
+        String effectiveApiKey = getEffectiveValue(options == null ? null : options.getApiKey(), apiKey);
+        String effectiveBaseUrl = getEffectiveValue(options == null ? null : options.getBaseUrl(), baseUrl);
+        String effectiveModel = getEffectiveValue(options == null ? null : options.getModel(), model);
+        String sourceLang = getEffectiveValue(options == null ? null : options.getSourceLang(), "en");
+        String targetLang = getEffectiveValue(options == null ? null : options.getTargetLang(), "zh-CN");
 
-    @Override
-    public void translate(List<SubtitleLine> subtitles, java.util.function.Consumer<Integer> progressCallback) {
-        if (!enabled || apiKey == null || apiKey.isEmpty() || baseUrl == null || baseUrl.isEmpty()) {
+        boolean runtimeConfigured = effectiveApiKey != null && !effectiveApiKey.isEmpty()
+                && effectiveBaseUrl != null && !effectiveBaseUrl.isEmpty();
+        if ((!enabled && !runtimeConfigured) || effectiveApiKey == null || effectiveApiKey.isEmpty() || effectiveBaseUrl == null || effectiveBaseUrl.isEmpty()) {
             throw new IllegalStateException("Doubao provider disabled or missing configuration");
         }
 
         List<SubtitleLine> linesToTranslate = subtitles.stream()
-                .filter(s -> (s.getCn() == null || s.getCn().isEmpty()) && s.getEn() != null)
+                .filter(s -> (s.getEffectiveTargetText() == null || s.getEffectiveTargetText().isEmpty()) && s.getEffectiveSourceText() != null)
                 .collect(Collectors.toList());
 
         if (linesToTranslate.isEmpty()) {
@@ -71,7 +75,7 @@ public class DoubaoTranslationService implements TranslationService {
         }
 
         try {
-            translateBatch(linesToTranslate);
+            translateBatch(linesToTranslate, effectiveApiKey, effectiveBaseUrl, effectiveModel, sourceLang, targetLang);
             if (progressCallback != null) {
                 progressCallback.accept(100);
             }
@@ -81,14 +85,14 @@ public class DoubaoTranslationService implements TranslationService {
         }
     }
 
-    private void translateBatch(List<SubtitleLine> batch) throws Exception {
+    private void translateBatch(List<SubtitleLine> batch, String effectiveApiKey, String effectiveBaseUrl, String effectiveModel, String sourceLang, String targetLang) throws Exception {
         List<String> englishLines = batch.stream()
-                .map(SubtitleLine::getEn)
+                .map(SubtitleLine::getEffectiveSourceText)
                 .collect(Collectors.toList());
         String inputJson = objectMapper.writeValueAsString(englishLines);
 
         ObjectNode requestBody = objectMapper.createObjectNode();
-        requestBody.put("model", model);
+        requestBody.put("model", effectiveModel);
         
         ArrayNode inputArray = requestBody.putArray("input");
         ObjectNode userMessage = inputArray.addObject();
@@ -97,14 +101,14 @@ public class DoubaoTranslationService implements TranslationService {
         ArrayNode contentArray = userMessage.putArray("content");
         contentArray.addObject()
                 .put("type", AppConstants.Translation.TYPE_INPUT_TEXT)
-                .put("text", "Translate these English lines to Simplified Chinese. Output ONLY a JSON array of strings with the same length as the input array. No explanation, no markdown blocks. Input JSON array:\n" + inputJson);
+                .put("text", "Translate these subtitle lines from " + sourceLang + " to " + targetLang + ". Output ONLY a JSON array of strings with the same length as the input array. No explanation, no markdown blocks. Input JSON array:\n" + inputJson);
 
         String requestJson = objectMapper.writeValueAsString(requestBody);
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl))
+                .uri(URI.create(effectiveBaseUrl))
                 .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + apiKey)
+                .header("Authorization", "Bearer " + effectiveApiKey)
                 .timeout(Duration.ofSeconds(requestTimeoutSeconds))
                 .POST(HttpRequest.BodyPublishers.ofString(requestJson))
                 .build();
@@ -140,7 +144,7 @@ public class DoubaoTranslationService implements TranslationService {
                 List<String> translations = responseParser.parseAndNormalize(resultText, batch.size(), AppConstants.Translation.PROVIDER_DOUBAO);
                 for (int j = 0; j < translations.size(); j++) {
                     String translated = translations.get(j);
-                    batch.get(j).setCn(translated == null ? "" : translated.trim());
+                    batch.get(j).setTargetPayload(translated == null ? "" : translated.trim(), targetLang);
                 }
             } else {
                 throw new Exception("Unexpected Doubao response structure: " + response.body());
@@ -148,5 +152,9 @@ public class DoubaoTranslationService implements TranslationService {
         } else {
             throw new Exception("HTTP " + response.statusCode() + ": " + response.body());
         }
+    }
+
+    private String getEffectiveValue(String runtimeValue, String fallbackValue) {
+        return runtimeValue != null && !runtimeValue.isBlank() ? runtimeValue : fallbackValue;
     }
 }

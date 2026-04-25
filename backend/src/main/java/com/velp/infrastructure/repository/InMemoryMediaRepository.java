@@ -64,13 +64,15 @@ public class InMemoryMediaRepository implements MediaRepository {
     }
 
     @Override
-    public void saveTaskStatus(String taskId, String status, int progress, String videoId, String error, String url, String title) {
+    public void saveTaskStatus(String taskId, String status, int progress, String videoId, String error, String url, String title, String sourceLang, String targetLang) {
         TaskStatus existing = taskMap.get(taskId);
         String finalUrl = (url != null) ? url : (existing != null ? existing.url() : "");
         String finalTitle = (title != null) ? title : (existing != null ? existing.title() : "");
+        String finalSourceLang = (sourceLang != null) ? sourceLang : (existing != null ? existing.sourceLang() : "en");
+        String finalTargetLang = (targetLang != null) ? targetLang : (existing != null ? existing.targetLang() : "zh-CN");
         long createdAt = (existing != null && existing.createdAt() > 0) ? existing.createdAt() : System.currentTimeMillis();
         
-        taskMap.put(taskId, new TaskStatus(status, progress, videoId, error, finalUrl, finalTitle, createdAt));
+        taskMap.put(taskId, new TaskStatus(status, progress, videoId, error, finalUrl, finalTitle, finalSourceLang, finalTargetLang, createdAt));
         persistTasks();
     }
 
@@ -104,6 +106,8 @@ public class InMemoryMediaRepository implements MediaRepository {
                         e.getValue().videoId(), 
                         e.getValue().url(), 
                         e.getValue().title(),
+                        e.getValue().sourceLang(),
+                        e.getValue().targetLang(),
                         e.getValue().createdAt()))
                 .toList();
     }
