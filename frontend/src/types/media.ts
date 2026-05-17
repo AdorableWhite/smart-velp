@@ -1,7 +1,19 @@
 export type TaskState = 'pending' | 'processing' | 'completed' | 'failed';
 export type AppearanceMode = 'system' | 'light' | 'dark';
 export type SubtitleMode = 'dual' | 'source' | 'target' | 'hidden';
-export type TranslationProvider = 'doubao' | 'deepseek' | 'openai-compatible';
+export type TranslationProvider =
+  | 'free'
+  | 'openai-compatible'
+  | 'openai'
+  | 'deepseek'
+  | 'doubao'
+  | 'siliconflow'
+  | 'zhipu'
+  | 'qwen'
+  | 'gemini'
+  | 'claude'
+  | 'custom';
+export type TranslationServiceTier = 'free' | 'paid' | 'custom';
 
 export interface TaskSummary {
   taskId: string;
@@ -22,6 +34,7 @@ export interface AnalyzeRequest {
     baseUrl: string;
     model: string;
     apiKey: string;
+    prompt?: string;
   };
 }
 
@@ -95,9 +108,14 @@ export interface TranslationProfile {
   id: string;
   name: string;
   provider: TranslationProvider;
+  tier?: TranslationServiceTier;
   baseUrl: string;
   model: string;
   apiKey: string;
+  prompt?: string;
+  requiresApiKey?: boolean;
+  enabled: boolean;
+  isDefault: boolean;
   createdAt: number;
 }
 
@@ -105,8 +123,21 @@ export interface StoredTranslationProfile {
   id: string;
   name: string;
   provider: TranslationProvider;
+  tier?: TranslationServiceTier;
   baseUrl: string;
   model: string;
   encryptedApiKey: string;
+  prompt?: string;
+  requiresApiKey?: boolean;
+  enabled?: boolean;
+  isDefault?: boolean;
   createdAt: number;
+}
+
+export interface TranslationProfilePayload {
+  provider: TranslationProvider;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  prompt?: string;
 }

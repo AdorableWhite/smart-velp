@@ -1,5 +1,5 @@
 import { useLocation } from 'react-router-dom';
-import { usePreferencesStore } from '../../store/usePreferencesStore';
+import { ThemeIconButton } from './ThemeIconButton';
 
 const routeMeta: Record<string, { title: string; description: string }> = {
   '/': {
@@ -18,8 +18,6 @@ const routeMeta: Record<string, { title: string; description: string }> = {
 
 export function HeaderBar() {
   const location = useLocation();
-  const appearance = usePreferencesStore((state) => state.appearance);
-  const setAppearance = usePreferencesStore((state) => state.setAppearance);
 
   const meta = routeMeta[location.pathname] ?? {
     title: '学习页',
@@ -34,23 +32,7 @@ export function HeaderBar() {
         <p className="header-copy">{meta.description}</p>
       </div>
 
-      <div className="theme-toggle-group" role="group" aria-label="主题切换">
-        {[
-          { value: 'system', label: '跟随系统' },
-          { value: 'light', label: '浅色' },
-          { value: 'dark', label: '深色' }
-        ].map((item) => (
-          <button
-            key={item.value}
-            type="button"
-            className={`chip-button${appearance === item.value ? ' active' : ''}`}
-            onClick={() => setAppearance(item.value as 'system' | 'light' | 'dark')}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      <ThemeIconButton />
     </header>
   );
 }
-

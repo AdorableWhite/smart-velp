@@ -1,17 +1,15 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PlayerPanel } from '../components/player/PlayerPanel';
 import {
-  buildDownloadUrl,
   fetchCourseDetail,
   fetchTaskStatus,
   submitCourseRetranslate,
   submitLocalSubtitleAnalyze
 } from '../services/api/media';
-import { downloadToDevice } from '../services/storage/download';
 import { getImportedMedia, updateImportedMediaSubtitleTask } from '../services/storage/localMedia';
-import { getTranslationProfile } from '../services/storage/translationProfiles';
+import { getPreferredTranslationProfile } from '../services/storage/translationProfiles';
 import { usePreferencesStore } from '../store/usePreferencesStore';
 import type { DisplaySubtitle } from '../types/media';
 import { normalizeBackendSubtitles, parseSubtitleFile } from '../utils/subtitles';
@@ -19,11 +17,9 @@ import { normalizeBackendSubtitles, parseSubtitleFile } from '../utils/subtitles
 export function StudyPage() {
   const navigate = useNavigate();
   const params = useParams();
-  const autoDownload = usePreferencesStore((state) => state.autoDownload);
   const sourceLang = usePreferencesStore((state) => state.sourceLang);
   const targetLang = usePreferencesStore((state) => state.targetLang);
   const selectedProfileId = usePreferencesStore((state) => state.selectedProfileId);
-  const autoDownloadedRef = useRef(false);
   const [localState, setLocalState] = useState<{
     title: string;
     videoSrc: string;
@@ -68,7 +64,7 @@ export function StudyPage() {
 
   const courseRetranslateMutation = useMutation({
     mutationFn: async (videoId: string) => {
-      const selectedProfile = await getTranslationProfile(selectedProfileId);
+      const selectedProfile = await getPreferredTranslationProfile(selectedProfileId);
       return submitCourseRetranslate(videoId, {
         sourceLang,
         targetLang,
@@ -77,7 +73,8 @@ export function StudyPage() {
               provider: selectedProfile.provider,
               baseUrl: selectedProfile.baseUrl,
               model: selectedProfile.model,
-              apiKey: selectedProfile.apiKey
+              apiKey: selectedProfile.apiKey,
+              prompt: selectedProfile.prompt
             }
           : undefined
       });
@@ -86,10 +83,6 @@ export function StudyPage() {
       navigate(`/study/backend/${result.taskId}`);
     }
   });
-
-  useEffect(() => {
-    autoDownloadedRef.current = false;
-  }, [params.id]);
 
   useEffect(() => {
     if (params.mode !== 'local' || !params.id) {
@@ -161,7 +154,7 @@ export function StudyPage() {
       return;
     }
 
-    const selectedProfile = await getTranslationProfile(selectedProfileId);
+    const selectedProfile = await getPreferredTranslationProfile(selectedProfileId);
     const subtitleContent = await item.subtitleFile.text();
     const result = await submitLocalSubtitleAnalyze({
       title: item.title,
@@ -174,7 +167,8 @@ export function StudyPage() {
             provider: selectedProfile.provider,
             baseUrl: selectedProfile.baseUrl,
             model: selectedProfile.model,
-            apiKey: selectedProfile.apiKey
+            apiKey: selectedProfile.apiKey,
+            prompt: selectedProfile.prompt
           }
         : undefined
     });
@@ -182,19 +176,6 @@ export function StudyPage() {
     await updateImportedMediaSubtitleTask(params.id, result.taskId);
     setLocalState((current) => (current ? { ...current, subtitleTaskId: result.taskId } : current));
   };
-
-  useEffect(() => {
-    if (
-      params.mode === 'backend' &&
-      autoDownload &&
-      !autoDownloadedRef.current &&
-      taskStatusQuery.data?.status === 'completed' &&
-      taskStatusQuery.data.videoId
-    ) {
-      autoDownloadedRef.current = true;
-      void downloadToDevice(buildDownloadUrl(taskStatusQuery.data.videoId), `${courseQuery.data?.title ?? 'video'}.mp4`);
-    }
-  }, [autoDownload, courseQuery.data?.title, params.mode, taskStatusQuery.data]);
 
   if (params.mode === 'backend') {
     if (taskStatusQuery.isLoading || taskStatusQuery.data?.status === 'processing' || taskStatusQuery.data?.status === 'pending') {
@@ -222,42 +203,20 @@ export function StudyPage() {
 
     if (courseQuery.data) {
       return (
-        <div className="page-stack">
-          <section className="card status-card">
-            <p className="eyebrow">课程操作</p>
-            <p className="subtle-text">
-              当前语言方向：{courseQuery.data.sourceLang ?? sourceLang} → {courseQuery.data.targetLang ?? targetLang}
-            </p>
-            <div className="inline-actions">
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={!taskStatusQuery.data?.videoId || courseRetranslateMutation.isPending}
-                onClick={() => {
-                  if (taskStatusQuery.data?.videoId) {
-                    courseRetranslateMutation.mutate(taskStatusQuery.data.videoId);
-                  }
-                }}
-              >
-                {courseRetranslateMutation.isPending ? '正在创建重译任务...' : '重新翻译当前课程'}
-              </button>
-            </div>
-          </section>
+        <div className="page-stack page-stack--study">
           <PlayerPanel
             title={courseQuery.data.title}
             videoSrc={courseQuery.data.hasVideo ? courseQuery.data.videoUrl : undefined}
             subtitles={normalizeBackendSubtitles(courseQuery.data.subtitles)}
             sourceLang={courseQuery.data.sourceLang ?? sourceLang}
             targetLang={courseQuery.data.targetLang ?? targetLang}
-            onDownload={
-              courseQuery.data.hasVideo
-                ? () =>
-                    downloadToDevice(
-                      buildDownloadUrl(taskStatusQuery.data?.videoId ?? ''),
-                      `${courseQuery.data.title || 'video'}.mp4`
-                    )
-                : undefined
-            }
+            canRetranslate={Boolean(taskStatusQuery.data?.videoId)}
+            isRetranslating={courseRetranslateMutation.isPending}
+            onRetranslate={() => {
+              if (taskStatusQuery.data?.videoId) {
+                courseRetranslateMutation.mutate(taskStatusQuery.data.videoId);
+              }
+            }}
           />
         </div>
       );
@@ -266,16 +225,11 @@ export function StudyPage() {
 
   if (params.mode === 'local' && localState) {
     return (
-      <div className="page-stack">
+      <div className="page-stack page-stack--study">
         {localSubtitleStatusText ? (
-          <section className="card status-card">
+          <section className="card status-card compact-status-card">
             <p className="eyebrow">本地字幕任务</p>
             <p className="subtle-text">{localSubtitleStatusText}</p>
-            <div className="inline-actions">
-              <button type="button" className="secondary-button" onClick={() => void rerunLocalSubtitleTask()}>
-                重新翻译字幕
-              </button>
-            </div>
           </section>
         ) : null}
         <PlayerPanel
@@ -284,6 +238,11 @@ export function StudyPage() {
           subtitles={localState.subtitles}
           sourceLang={localState.subtitles[0]?.sourceLang ?? sourceLang}
           targetLang={localState.subtitles[0]?.targetLang ?? targetLang}
+          canRetranslate={Boolean(params.id)}
+          isRetranslating={
+            localSubtitleStatusQuery.data?.status === 'processing' || localSubtitleStatusQuery.data?.status === 'pending'
+          }
+          onRetranslate={rerunLocalSubtitleTask}
         />
       </div>
     );

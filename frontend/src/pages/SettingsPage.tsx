@@ -1,56 +1,57 @@
+import { ThemeIconButton } from '../components/layout/ThemeIconButton';
 import { ProfileManager } from '../components/settings/ProfileManager';
 import { usePreferencesStore } from '../store/usePreferencesStore';
 
+const commonLanguages = [
+  { value: 'en', label: '英语' },
+  { value: 'zh-CN', label: '简体中文' },
+  { value: 'zh-Hant', label: '繁体中文' },
+  { value: 'ja', label: '日语' },
+  { value: 'ko', label: '韩语' },
+  { value: 'fr', label: '法语' },
+  { value: 'de', label: '德语' },
+  { value: 'es', label: '西班牙语' },
+  { value: 'ru', label: '俄语' },
+  { value: 'pt', label: '葡萄牙语' }
+];
+
 export function SettingsPage() {
-  const appearance = usePreferencesStore((state) => state.appearance);
-  const setAppearance = usePreferencesStore((state) => state.setAppearance);
-  const autoDownload = usePreferencesStore((state) => state.autoDownload);
-  const setAutoDownload = usePreferencesStore((state) => state.setAutoDownload);
   const sourceLang = usePreferencesStore((state) => state.sourceLang);
   const targetLang = usePreferencesStore((state) => state.targetLang);
   const setLanguagePair = usePreferencesStore((state) => state.setLanguagePair);
 
   return (
-    <div className="settings-grid">
-      <section className="card settings-stack">
+    <div className="settings-page">
+      <section className="card settings-compact-card">
         <div className="section-head">
           <div>
-            <p className="eyebrow">界面设置</p>
-            <h3>自适应主题</h3>
+            <p className="eyebrow">基础设置</p>
+            <h3>主题与翻译方向</h3>
           </div>
+          <ThemeIconButton />
         </div>
 
-        <div className="segmented large">
-          {[
-            { key: 'system', label: '跟随系统' },
-            { key: 'light', label: '浅色模式' },
-            { key: 'dark', label: '深色模式' }
-          ].map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={appearance === item.key ? 'active' : ''}
-              onClick={() => setAppearance(item.key as 'system' | 'light' | 'dark')}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-
-        <label className="switch-row">
-          <span>任务完成后自动下载视频</span>
-          <input type="checkbox" checked={autoDownload} onChange={(event) => setAutoDownload(event.target.checked)} />
-        </label>
-
-        <div className="settings-form">
+        <div className="settings-form compact-settings-form">
           <label className="field">
             <span>源语言</span>
-            <input value={sourceLang} onChange={(event) => setLanguagePair(event.target.value, targetLang)} />
+            <select value={sourceLang} onChange={(event) => setLanguagePair(event.target.value, targetLang)}>
+              {commonLanguages.map((language) => (
+                <option key={language.value} value={language.value}>
+                  {language.label}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className="field">
             <span>目标语言</span>
-            <input value={targetLang} onChange={(event) => setLanguagePair(sourceLang, event.target.value)} />
+            <select value={targetLang} onChange={(event) => setLanguagePair(sourceLang, event.target.value)}>
+              {commonLanguages.map((language) => (
+                <option key={language.value} value={language.value}>
+                  {language.label}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
       </section>

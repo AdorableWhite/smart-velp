@@ -53,11 +53,13 @@ public class DoubaoTranslationService implements TranslationService {
 
     @Override
     public void translate(List<SubtitleLine> subtitles, TranslationOptions options, java.util.function.Consumer<Integer> progressCallback) {
-        String effectiveApiKey = getEffectiveValue(options == null ? null : options.getApiKey(), apiKey);
-        String effectiveBaseUrl = getEffectiveValue(options == null ? null : options.getBaseUrl(), baseUrl);
-        String effectiveModel = getEffectiveValue(options == null ? null : options.getModel(), model);
+        boolean useServerDefaults = options != null && "free".equalsIgnoreCase(options.getProvider());
+        String effectiveApiKey = useServerDefaults ? apiKey : getEffectiveValue(options == null ? null : options.getApiKey(), apiKey);
+        String effectiveBaseUrl = useServerDefaults ? baseUrl : getEffectiveValue(options == null ? null : options.getBaseUrl(), baseUrl);
+        String effectiveModel = useServerDefaults ? model : getEffectiveValue(options == null ? null : options.getModel(), model);
         String sourceLang = getEffectiveValue(options == null ? null : options.getSourceLang(), "en");
         String targetLang = getEffectiveValue(options == null ? null : options.getTargetLang(), "zh-CN");
+        String prompt = getEffectivePrompt(options == null ? null : options.getPrompt(), sourceLang, targetLang);
 
         boolean runtimeConfigured = effectiveApiKey != null && !effectiveApiKey.isEmpty()
                 && effectiveBaseUrl != null && !effectiveBaseUrl.isEmpty();
@@ -75,7 +77,7 @@ public class DoubaoTranslationService implements TranslationService {
         }
 
         try {
-            translateBatch(linesToTranslate, effectiveApiKey, effectiveBaseUrl, effectiveModel, sourceLang, targetLang);
+            translateBatch(linesToTranslate, effectiveApiKey, effectiveBaseUrl, effectiveModel, sourceLang, targetLang, prompt);
             if (progressCallback != null) {
                 progressCallback.accept(100);
             }
@@ -85,7 +87,7 @@ public class DoubaoTranslationService implements TranslationService {
         }
     }
 
-    private void translateBatch(List<SubtitleLine> batch, String effectiveApiKey, String effectiveBaseUrl, String effectiveModel, String sourceLang, String targetLang) throws Exception {
+    private void translateBatch(List<SubtitleLine> batch, String effectiveApiKey, String effectiveBaseUrl, String effectiveModel, String sourceLang, String targetLang, String prompt) throws Exception {
         List<String> englishLines = batch.stream()
                 .map(SubtitleLine::getEffectiveSourceText)
                 .collect(Collectors.toList());
@@ -101,7 +103,7 @@ public class DoubaoTranslationService implements TranslationService {
         ArrayNode contentArray = userMessage.putArray("content");
         contentArray.addObject()
                 .put("type", AppConstants.Translation.TYPE_INPUT_TEXT)
-                .put("text", "Translate these subtitle lines from " + sourceLang + " to " + targetLang + ". Output ONLY a JSON array of strings with the same length as the input array. No explanation, no markdown blocks. Input JSON array:\n" + inputJson);
+                .put("text", prompt + "\nInput JSON array:\n" + inputJson);
 
         String requestJson = objectMapper.writeValueAsString(requestBody);
 
@@ -156,5 +158,14 @@ public class DoubaoTranslationService implements TranslationService {
 
     private String getEffectiveValue(String runtimeValue, String fallbackValue) {
         return runtimeValue != null && !runtimeValue.isBlank() ? runtimeValue : fallbackValue;
+    }
+
+    private String getEffectivePrompt(String runtimePrompt, String sourceLang, String targetLang) {
+        String prompt = runtimePrompt != null && !runtimePrompt.isBlank()
+                ? runtimePrompt
+                : "Translate these subtitle lines from {{sourceLang}} to {{targetLang}}. Output ONLY a JSON array of strings with the same length as the input array. No explanation, no markdown blocks.";
+        return prompt
+                .replace("{{sourceLang}}", sourceLang)
+                .replace("{{targetLang}}", targetLang);
     }
 }

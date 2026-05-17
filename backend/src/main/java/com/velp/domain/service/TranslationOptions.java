@@ -12,6 +12,7 @@ public class TranslationOptions {
     String baseUrl;
     String model;
     String apiKey;
+    String prompt;
 
     public static TranslationOptions defaults() {
         return TranslationOptions.builder()
@@ -26,7 +27,16 @@ public class TranslationOptions {
         }
 
         String normalized = provider.trim().toLowerCase();
-        if ("openai-compatible".equals(normalized)) {
+        if ("free".equals(normalized)) {
+            return "doubao";
+        }
+        if ("openai-compatible".equals(normalized)
+                || "custom".equals(normalized)
+                || "siliconflow".equals(normalized)
+                || "zhipu".equals(normalized)
+                || "qwen".equals(normalized)
+                || "gemini".equals(normalized)
+                || "claude".equals(normalized)) {
             return "openai";
         }
         return normalized;

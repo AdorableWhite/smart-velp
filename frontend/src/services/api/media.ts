@@ -2,6 +2,7 @@ import type {
   AnalyzeRequest,
   CourseDetailResponse,
   ParserStatusResponse,
+  TranslationProfilePayload,
   TaskResponse,
   TaskSummary
 } from '../../types/media';
@@ -78,4 +79,17 @@ export async function clearFailedTasks() {
 
 export function buildDownloadUrl(videoId: string) {
   return `${API_BASE}/api/course/${videoId}/download`;
+}
+
+export function testTranslationProfile(request: TranslationProfilePayload & { sourceLang?: string; targetLang?: string }) {
+  return requestJson<{
+    ok: boolean;
+    message: string;
+    translatedText: string;
+    elapsedMs: number;
+  }>('/api/translation/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request)
+  });
 }

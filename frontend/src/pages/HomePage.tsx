@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { TaskList } from '../components/library/TaskList';
 import { fetchTasks, submitAnalyze, submitLocalSubtitleAnalyze } from '../services/api/media';
 import { listImportedMedia, saveImportedMedia } from '../services/storage/localMedia';
-import { getTranslationProfile } from '../services/storage/translationProfiles';
+import { getPreferredTranslationProfile } from '../services/storage/translationProfiles';
 import { usePreferencesStore } from '../store/usePreferencesStore';
 import type { ImportedMediaSummary } from '../types/media';
 
@@ -45,13 +45,34 @@ export function HomePage() {
     };
   }, [localItems.length, tasksQuery.data]);
 
+  const continueItems = useMemo(() => {
+    const onlineItems = (tasksQuery.data ?? [])
+      .filter((task) => task.status === 'completed')
+      .slice(0, 2)
+      .map((task) => ({
+        id: task.taskId,
+        title: task.title || task.url,
+        meta: '在线课程',
+        path: `/study/backend/${task.taskId}`
+      }));
+
+    const localCards = localItems.slice(0, 2).map((item) => ({
+      id: item.id,
+      title: item.title,
+      meta: '本地内容',
+      path: `/study/local/${item.id}`
+    }));
+
+    return [...onlineItems, ...localCards].slice(0, 4);
+  }, [localItems, tasksQuery.data]);
+
   const onSubmitUrl = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!url.trim()) {
       return;
     }
 
-    const selectedProfile = await getTranslationProfile(selectedProfileId);
+    const selectedProfile = await getPreferredTranslationProfile(selectedProfileId);
     await submitMutation.mutateAsync({
       url: url.trim(),
       sourceLang,
@@ -69,7 +90,7 @@ export function HomePage() {
 
   const onImport = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const selectedProfile = await getTranslationProfile(selectedProfileId);
+    const selectedProfile = await getPreferredTranslationProfile(selectedProfileId);
     let subtitleTaskId: string | undefined;
 
     if (!videoFile && subtitleFile) {
@@ -85,7 +106,8 @@ export function HomePage() {
               provider: selectedProfile.provider,
               baseUrl: selectedProfile.baseUrl,
               model: selectedProfile.model,
-              apiKey: selectedProfile.apiKey
+              apiKey: selectedProfile.apiKey,
+              prompt: selectedProfile.prompt
             }
           : undefined
       });
@@ -108,11 +130,12 @@ export function HomePage() {
         translationProfile: selectedProfile
           ? {
               provider: selectedProfile.provider,
-              baseUrl: selectedProfile.baseUrl,
-              model: selectedProfile.model,
-              apiKey: selectedProfile.apiKey
-            }
-          : undefined
+            baseUrl: selectedProfile.baseUrl,
+            model: selectedProfile.model,
+            apiKey: selectedProfile.apiKey,
+            prompt: selectedProfile.prompt
+          }
+        : undefined
       });
       subtitleTaskId = result.taskId;
     }
@@ -123,29 +146,30 @@ export function HomePage() {
 
   return (
     <div className="page-stack">
-      <section className="hero card">
-        <div>
-          <p className="eyebrow">Apple-inspired learning</p>
-          <h1>让界面随设备自然变化，把注意力留给内容本身。</h1>
-          <p className="hero-copy">
-            当前版本已经按手机、平板、桌面做响应式布局。你可以直接粘贴 YouTube 链接，也可以导入本地
-            mp4/mov 与 srt/vtt 文件开始学习。
-          </p>
-        </div>
+      <section className="hero hero--compact card">
+        <div className="hero-grid">
+          <div className="hero-copy-block">
+            <p className="eyebrow">Ready to learn</p>
+            <h1>从内容出发，而不是从设置出发。</h1>
+            <p className="hero-copy">
+              直接粘贴链接，或者导入本地视频与字幕。把进入学习状态的步骤压到最少。
+            </p>
+          </div>
 
-        <div className="stats-grid">
-          <article className="stat-card">
-            <span>总条目</span>
-            <strong>{stats.total}</strong>
-          </article>
-          <article className="stat-card">
-            <span>已就绪</span>
-            <strong>{stats.completed}</strong>
-          </article>
-          <article className="stat-card">
-            <span>处理中</span>
-            <strong>{stats.processing}</strong>
-          </article>
+          <div className="hero-stats">
+            <article className="stat-card compact">
+              <span>总条目</span>
+              <strong>{stats.total}</strong>
+            </article>
+            <article className="stat-card compact">
+              <span>已就绪</span>
+              <strong>{stats.completed}</strong>
+            </article>
+            <article className="stat-card compact">
+              <span>处理中</span>
+              <strong>{stats.processing}</strong>
+            </article>
+          </div>
         </div>
       </section>
 
@@ -209,8 +233,38 @@ export function HomePage() {
       <section className="card">
         <div className="section-head">
           <div>
+            <p className="eyebrow">继续学习</p>
+            <h3>最近打开的内容</h3>
+          </div>
+        </div>
+
+        {continueItems.length ? (
+          <div className="task-list-grid">
+            {continueItems.map((item) => (
+              <article key={item.id} className="task-card status-completed">
+                <div className="task-card-head">
+                  <span className="status-badge">{item.meta}</span>
+                </div>
+                <h3>{item.title}</h3>
+                <div className="task-card-foot">
+                  <span />
+                  <button type="button" className="text-button" onClick={() => navigate(item.path)}>
+                    继续学习
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-card">还没有可继续的内容，先从上方导入一个视频或字幕开始。</div>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="section-head">
+          <div>
             <p className="eyebrow">最近在线任务</p>
-            <h3>不中断的学习队列</h3>
+            <h3>不中断的处理队列</h3>
           </div>
         </div>
 

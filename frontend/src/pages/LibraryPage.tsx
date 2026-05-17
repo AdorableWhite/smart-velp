@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { TaskList } from '../components/library/TaskList';
 import { clearFailedTasks, deleteTask, fetchTaskStatus, fetchTasks, submitLocalSubtitleAnalyze } from '../services/api/media';
 import { getImportedMedia, listImportedMedia, updateImportedMediaSubtitleTask } from '../services/storage/localMedia';
-import { getTranslationProfile } from '../services/storage/translationProfiles';
+import { getPreferredTranslationProfile } from '../services/storage/translationProfiles';
 import { usePreferencesStore } from '../store/usePreferencesStore';
 import type { ImportedMediaSummary } from '../types/media';
 
@@ -81,7 +81,7 @@ export function LibraryPage() {
         throw new Error('该本地内容没有字幕文件');
       }
 
-      const selectedProfile = await getTranslationProfile(selectedProfileId);
+      const selectedProfile = await getPreferredTranslationProfile(selectedProfileId);
       const subtitleContent = await item.subtitleFile.text();
       const result = await submitLocalSubtitleAnalyze({
         title: item.title,
@@ -92,11 +92,12 @@ export function LibraryPage() {
         translationProfile: selectedProfile
           ? {
               provider: selectedProfile.provider,
-              baseUrl: selectedProfile.baseUrl,
-              model: selectedProfile.model,
-              apiKey: selectedProfile.apiKey
-            }
-          : undefined
+            baseUrl: selectedProfile.baseUrl,
+            model: selectedProfile.model,
+            apiKey: selectedProfile.apiKey,
+            prompt: selectedProfile.prompt
+          }
+        : undefined
       });
 
       await updateImportedMediaSubtitleTask(itemId, result.taskId);

@@ -1,5 +1,7 @@
 package com.velp.domain.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -7,6 +9,7 @@ import lombok.NoArgsConstructor;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class SubtitleLine {
     private double startTime;
     private double endTime;
@@ -17,10 +20,12 @@ public class SubtitleLine {
     private String sourceLang;
     private String targetLang;
 
+    @JsonIgnore
     public String getEffectiveSourceText() {
         return sourceText != null && !sourceText.isBlank() ? sourceText : en;
     }
 
+    @JsonIgnore
     public String getEffectiveTargetText() {
         return targetText != null && !targetText.isBlank() ? targetText : cn;
     }

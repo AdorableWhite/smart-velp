@@ -7,7 +7,6 @@ interface PreferencesState {
   subtitleMode: SubtitleMode;
   playbackRate: number;
   fontSize: number;
-  autoDownload: boolean;
   loopCurrentLine: boolean;
   sourceLang: string;
   targetLang: string;
@@ -16,7 +15,6 @@ interface PreferencesState {
   setSubtitleMode: (mode: SubtitleMode) => void;
   setPlaybackRate: (rate: number) => void;
   setFontSize: (size: number) => void;
-  setAutoDownload: (enabled: boolean) => void;
   setLoopCurrentLine: (enabled: boolean) => void;
   setLanguagePair: (sourceLang: string, targetLang: string) => void;
   setSelectedProfileId: (profileId?: string) => void;
@@ -29,7 +27,6 @@ export const usePreferencesStore = create<PreferencesState>()(
       subtitleMode: 'dual',
       playbackRate: 1,
       fontSize: 22,
-      autoDownload: false,
       loopCurrentLine: false,
       sourceLang: 'en',
       targetLang: 'zh-CN',
@@ -38,7 +35,6 @@ export const usePreferencesStore = create<PreferencesState>()(
       setSubtitleMode: (subtitleMode) => set({ subtitleMode }),
       setPlaybackRate: (playbackRate) => set({ playbackRate }),
       setFontSize: (fontSize) => set({ fontSize }),
-      setAutoDownload: (autoDownload) => set({ autoDownload }),
       setLoopCurrentLine: (loopCurrentLine) => set({ loopCurrentLine }),
       setLanguagePair: (sourceLang, targetLang) => set({ sourceLang, targetLang }),
       setSelectedProfileId: (selectedProfileId) => set({ selectedProfileId })
@@ -49,4 +45,3 @@ export const usePreferencesStore = create<PreferencesState>()(
     }
   )
 );
-

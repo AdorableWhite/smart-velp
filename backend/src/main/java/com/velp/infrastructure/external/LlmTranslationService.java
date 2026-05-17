@@ -56,6 +56,7 @@ public class LlmTranslationService implements TranslationService {
         String effectiveModel = getEffectiveValue(options == null ? null : options.getModel(), model);
         String sourceLang = getEffectiveValue(options == null ? null : options.getSourceLang(), "en");
         String targetLang = getEffectiveValue(options == null ? null : options.getTargetLang(), "zh-CN");
+        String prompt = getEffectivePrompt(options == null ? null : options.getPrompt(), sourceLang, targetLang);
 
         boolean runtimeConfigured = effectiveApiKey != null && !effectiveApiKey.isEmpty()
                 && effectiveBaseUrl != null && !effectiveBaseUrl.isEmpty();
@@ -77,7 +78,7 @@ public class LlmTranslationService implements TranslationService {
         }
 
         try {
-            translateBatch(linesToTranslate, effectiveApiKey, effectiveBaseUrl, effectiveModel, sourceLang, targetLang);
+            translateBatch(linesToTranslate, effectiveApiKey, effectiveBaseUrl, effectiveModel, sourceLang, targetLang, prompt);
             if (progressCallback != null) {
                 progressCallback.accept(100);
             }
@@ -86,21 +87,18 @@ public class LlmTranslationService implements TranslationService {
         }
     }
 
-    private void translateBatch(List<SubtitleLine> batch, String effectiveApiKey, String effectiveBaseUrl, String effectiveModel, String sourceLang, String targetLang) throws Exception {
+    private void translateBatch(List<SubtitleLine> batch, String effectiveApiKey, String effectiveBaseUrl, String effectiveModel, String sourceLang, String targetLang, String prompt) throws Exception {
         List<String> englishLines = batch.stream()
                 .map(SubtitleLine::getEffectiveSourceText)
                 .collect(Collectors.toList());
         String inputJson = objectMapper.writeValueAsString(englishLines);
-
-        String systemPrompt = "You are a professional subtitle translator. Translate subtitle lines from " + sourceLang + " to " + targetLang + ". " +
-                "Output ONLY a JSON array of strings with the same length as the input array. No markdown, no explanation.";
 
         ObjectNode requestBody = objectMapper.createObjectNode();
         requestBody.put("model", effectiveModel);
         requestBody.put("temperature", 0.3);
 
         ArrayNode messages = requestBody.putArray("messages");
-        messages.addObject().put("role", "system").put("content", systemPrompt);
+        messages.addObject().put("role", "system").put("content", prompt);
         messages.addObject().put("role", "user").put("content", inputJson);
 
         String requestJson = objectMapper.writeValueAsString(requestBody);
@@ -132,5 +130,14 @@ public class LlmTranslationService implements TranslationService {
 
     private String getEffectiveValue(String runtimeValue, String fallbackValue) {
         return runtimeValue != null && !runtimeValue.isBlank() ? runtimeValue : fallbackValue;
+    }
+
+    private String getEffectivePrompt(String runtimePrompt, String sourceLang, String targetLang) {
+        String prompt = runtimePrompt != null && !runtimePrompt.isBlank()
+                ? runtimePrompt
+                : "You are a professional subtitle translator. Translate subtitle lines from {{sourceLang}} to {{targetLang}}. Output ONLY a JSON array of strings with the same length as the input array. No markdown, no explanation.";
+        return prompt
+                .replace("{{sourceLang}}", sourceLang)
+                .replace("{{targetLang}}", targetLang);
     }
 }

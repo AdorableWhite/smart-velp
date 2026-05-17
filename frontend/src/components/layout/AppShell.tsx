@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { HeaderBar } from './HeaderBar';
 
 const navigation = [
@@ -8,13 +8,17 @@ const navigation = [
 ];
 
 export function AppShell() {
+  const location = useLocation();
+  const isStudyPage = location.pathname.startsWith('/study/');
+  const isSettingsPage = location.pathname === '/settings';
+
   return (
-    <div className="shell">
+    <div className={`shell${isStudyPage ? ' shell--study' : ''}`}>
       <aside className="sidebar">
         <div className="brand-card">
-          <div className="brand-pill">PWA v2</div>
+          <div className="brand-pill">Smart VELP</div>
           <h1>Smart VELP</h1>
-          <p>为视频学习重新整理的一套跨屏体验，支持在线与本地两条学习入口。</p>
+          <p>一个把在线视频、本地视频与字幕学习整合到同一工作流里的轻量学习台。</p>
         </div>
 
         <nav className="nav-list" aria-label="主导航">
@@ -31,13 +35,13 @@ export function AppShell() {
         </nav>
 
         <div className="sidebar-note">
-          <strong>本轮重点</strong>
-          <span>React + TypeScript + PWA 基座已接入，页面会对手机、平板、桌面做自适应重排。</span>
+          <strong>当前方向</strong>
+          <span>持续收口 UI、字幕重译链路与 PWA 体验，让它更像一个真正的学习产品。</span>
         </div>
       </aside>
 
       <div className="content-frame">
-        <HeaderBar />
+        {isStudyPage || isSettingsPage ? null : <HeaderBar />}
         <main className="page-content">
           <Outlet />
         </main>
@@ -45,4 +49,3 @@ export function AppShell() {
     </div>
   );
 }
-

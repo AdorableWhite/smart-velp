@@ -366,6 +366,7 @@ public class MediaApplicationService {
                 .baseUrl(request.getTranslationProfile().getBaseUrl())
                 .model(request.getTranslationProfile().getModel())
                 .apiKey(request.getTranslationProfile().getApiKey())
+                .prompt(request.getTranslationProfile().getPrompt())
                 .build();
     }
 
@@ -384,6 +385,7 @@ public class MediaApplicationService {
                 .baseUrl(request.getTranslationProfile().getBaseUrl())
                 .model(request.getTranslationProfile().getModel())
                 .apiKey(request.getTranslationProfile().getApiKey())
+                .prompt(request.getTranslationProfile().getPrompt())
                 .build();
     }
 
@@ -402,6 +404,7 @@ public class MediaApplicationService {
                 .baseUrl(request.getTranslationProfile().getBaseUrl())
                 .model(request.getTranslationProfile().getModel())
                 .apiKey(request.getTranslationProfile().getApiKey())
+                .prompt(request.getTranslationProfile().getPrompt())
                 .build();
     }
 

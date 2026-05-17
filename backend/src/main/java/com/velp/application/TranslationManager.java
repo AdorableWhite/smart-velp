@@ -203,7 +203,7 @@ public class TranslationManager implements TranslationService {
             if (sourceText == null || sourceText.isEmpty()) {
                 continue;
             }
-            String key = hashKey(sourceText, options.getTargetLang());
+            String key = hashKey(sourceText, options.getTargetLang(), options.getPrompt());
             String cached = translationCache.get(key);
             if (cached != null && !cached.isEmpty()) {
                 line.setTargetPayload(cached, options.getTargetLang());
@@ -222,15 +222,15 @@ public class TranslationManager implements TranslationService {
             if (sourceText == null || sourceText.isEmpty()) continue;
             String targetText = line.getEffectiveTargetText();
             if (targetText != null && !targetText.isEmpty()) {
-                translationCache.put(hashKey(sourceText, options.getTargetLang()), targetText);
+                translationCache.put(hashKey(sourceText, options.getTargetLang(), options.getPrompt()), targetText);
             }
         }
     }
 
-    private String hashKey(String text, String targetLang) {
+    private String hashKey(String text, String targetLang, String prompt) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hashed = digest.digest((text + "::" + (targetLang == null ? "" : targetLang)).getBytes(StandardCharsets.UTF_8));
+            byte[] hashed = digest.digest((text + "::" + (targetLang == null ? "" : targetLang) + "::" + (prompt == null ? "" : prompt)).getBytes(StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder(hashed.length * 2);
             for (byte b : hashed) {
                 sb.append(String.format("%02x", b));

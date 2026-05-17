@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { ThemeIconButton } from '../layout/ThemeIconButton';
+import { exportRenderedVideo } from '../../services/storage/renderedVideoExport';
 import { usePreferencesStore } from '../../store/usePreferencesStore';
 import type { DisplaySubtitle, SubtitleMode } from '../../types/media';
 
@@ -6,12 +8,26 @@ interface PlayerPanelProps {
   title: string;
   videoSrc?: string;
   subtitles: DisplaySubtitle[];
-  onDownload?: () => Promise<void> | void;
+  onRetranslate?: () => Promise<void> | void;
+  isRetranslating?: boolean;
+  canRetranslate?: boolean;
   sourceLang?: string;
   targetLang?: string;
 }
 
 const rates = [0.75, 1, 1.25, 1.5, 2];
+const languageNames: Record<string, string> = {
+  en: '英语',
+  zh: '中文',
+  'zh-CN': '简体中文',
+  'zh-Hans': '简体中文',
+  'zh-Hant': '繁体中文',
+  ja: '日语',
+  ko: '韩语',
+  fr: '法语',
+  de: '德语',
+  es: '西班牙语'
+};
 
 function subtitleText(mode: SubtitleMode, subtitle: DisplaySubtitle) {
   if (mode === 'source') {
@@ -26,18 +42,32 @@ function subtitleText(mode: SubtitleMode, subtitle: DisplaySubtitle) {
   return { source: subtitle.sourceText, target: subtitle.targetText };
 }
 
+function languageName(code?: string) {
+  if (!code) {
+    return '未知语言';
+  }
+  return languageNames[code] ?? code;
+}
+
+function safeFileName(title: string) {
+  return `${title || 'video'}.mp4`;
+}
+
 export function PlayerPanel({
   title,
   videoSrc,
   subtitles,
-  onDownload,
+  onRetranslate,
+  isRetranslating = false,
+  canRetranslate = false,
   sourceLang,
   targetLang
 }: PlayerPanelProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const subtitleListRef = useRef<HTMLDivElement | null>(null);
   const [currentIndex, setCurrentIndex] = useState(-1);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [exportProgress, setExportProgress] = useState<number | undefined>();
+  const [exportError, setExportError] = useState<string>();
   const subtitleMode = usePreferencesStore((state) => state.subtitleMode);
   const setSubtitleMode = usePreferencesStore((state) => state.setSubtitleMode);
   const playbackRate = usePreferencesStore((state) => state.playbackRate);
@@ -47,26 +77,16 @@ export function PlayerPanel({
   const loopCurrentLine = usePreferencesStore((state) => state.loopCurrentLine);
   const setLoopCurrentLine = usePreferencesStore((state) => state.setLoopCurrentLine);
 
-  const currentSubtitle = currentIndex >= 0 ? subtitles[currentIndex] : undefined;
-  const overlay = useMemo(
-    () => (currentSubtitle ? subtitleText(subtitleMode, currentSubtitle) : { source: '', target: '' }),
-    [currentSubtitle, subtitleMode]
-  );
+  const languageDirection = `${languageName(sourceLang)} → ${languageName(targetLang)}`;
+  const isExporting = exportProgress !== undefined;
+  const activeSubtitle = currentIndex >= 0 ? subtitles[currentIndex] : undefined;
+  const activeVisibleSubtitle = activeSubtitle ? subtitleText(subtitleMode, activeSubtitle) : undefined;
 
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.playbackRate = playbackRate;
     }
   }, [playbackRate]);
-
-  useEffect(() => {
-    const onFullscreenChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement));
-    };
-
-    document.addEventListener('fullscreenchange', onFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
-  }, []);
 
   const seekToSubtitle = (index: number) => {
     const player = videoRef.current;
@@ -105,67 +125,119 @@ export function PlayerPanel({
     }
   };
 
-  const toggleFullscreen = async () => {
-    const container = videoRef.current?.closest('.video-stage') as HTMLElement | null;
-    if (!container) {
+  const onExport = async () => {
+    if (!videoSrc || isExporting) {
       return;
     }
 
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
-      return;
+    const player = videoRef.current;
+    const wasPaused = player?.paused ?? true;
+    if (player) {
+      player.pause();
     }
 
-    await container.requestFullscreen();
+    setExportError(undefined);
+    setExportProgress(0);
+    try {
+      await exportRenderedVideo({
+        videoSrc,
+        fileName: safeFileName(title),
+        subtitles,
+        subtitleMode,
+        fontSize,
+        onProgress: setExportProgress
+      });
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : '导出失败');
+    } finally {
+      setExportProgress(undefined);
+      if (player && !wasPaused) {
+        void player.play();
+      }
+    }
   };
 
   return (
     <section className="study-shell">
-      <div className="player-header">
+      <div className="player-header player-header--compact">
         <div>
-          <p className="eyebrow">学习模式</p>
           <h1>{title}</h1>
-          {(sourceLang || targetLang) ? (
-            <p className="subtle-text">
-              {sourceLang ?? 'source'} → {targetLang ?? 'target'}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="inline-actions">
-          {onDownload ? (
-            <button type="button" className="secondary-button" onClick={() => void onDownload()}>
-              下载视频
-            </button>
-          ) : null}
-          <button type="button" className="secondary-button" onClick={toggleFullscreen}>
-            {isFullscreen ? '退出全屏' : '全屏观看'}
-          </button>
+          <p className="subtle-text">{languageDirection}</p>
         </div>
       </div>
 
       <div className="player-grid">
-        <div className="card video-stage" style={{ ['--subtitle-font-size' as string]: `${fontSize}px` }}>
-          {videoSrc ? (
-            <video ref={videoRef} src={videoSrc} controls className="study-video" onTimeUpdate={onTimeUpdate} />
-          ) : (
-            <div className="study-video study-video--placeholder">
+        <div className="player-main-column">
+          <div className="card video-stage" style={{ ['--subtitle-font-size' as string]: `${fontSize}px` }}>
+            {videoSrc ? (
+              <video
+                ref={videoRef}
+                src={videoSrc}
+                controls
+                controlsList="nodownload"
+                className="study-video"
+                onTimeUpdate={onTimeUpdate}
+              />
+            ) : (
+              <div className="study-video study-video--placeholder">
+                <div>
+                  <p className="eyebrow">Subtitle Session</p>
+                  <h3>当前内容没有视频文件</h3>
+                  <p className="subtle-text">这次会话来自字幕重译任务，可以直接点击右侧句子进行精读。</p>
+                </div>
+              </div>
+            )}
+            {activeVisibleSubtitle && (activeVisibleSubtitle.source || activeVisibleSubtitle.target) ? (
+              <div className="subtitle-overlay" aria-live="polite">
+                {activeVisibleSubtitle.source ? <span>{activeVisibleSubtitle.source}</span> : null}
+                {activeVisibleSubtitle.target ? <span className="subtitle-overlay-target">{activeVisibleSubtitle.target}</span> : null}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="card learning-controls">
+            <div className="learning-controls-head">
               <div>
-                <p className="eyebrow">字幕学习</p>
-                <h3>当前内容没有视频文件</h3>
-                <p className="subtle-text">这次会话来自字幕重译任务，可以直接点击右侧句子进行精读。</p>
+                <p className="eyebrow">课程操作</p>
+                <h3>{languageDirection}</h3>
+              </div>
+              <div className="icon-actions">
+                <ThemeIconButton />
+                {videoSrc ? (
+                  <button
+                    type="button"
+                    className="icon-button"
+                    title="按当前字幕设置导出视频"
+                    aria-label="按当前字幕设置导出视频"
+                    disabled={isExporting}
+                    onClick={() => void onExport()}
+                  >
+                    ↓
+                  </button>
+                ) : null}
+                {onRetranslate ? (
+                  <button
+                    type="button"
+                    className="icon-button"
+                    title="重新翻译当前的课程"
+                    aria-label="重新翻译当前的课程"
+                    disabled={!canRetranslate || isRetranslating}
+                    onClick={() => void onRetranslate()}
+                  >
+                    译
+                  </button>
+                ) : null}
               </div>
             </div>
-          )}
 
-          {isFullscreen && (overlay.source || overlay.target) ? (
-            <div className="subtitle-overlay">
-              {overlay.source ? <div>{overlay.source}</div> : null}
-              {overlay.target ? <div>{overlay.target}</div> : null}
-            </div>
-          ) : null}
+            {isExporting ? (
+              <div className="export-progress">
+                <span style={{ width: `${Math.max(4, Math.round((exportProgress ?? 0) * 100))}%` }} />
+                <small>正在按当前字幕设置导出 {Math.round((exportProgress ?? 0) * 100)}%</small>
+              </div>
+            ) : null}
+            {exportError ? <p className="test-result failed">{exportError}</p> : null}
 
-          <div className="control-cluster">
             <div className="segmented">
               {[
                 { key: 'dual', label: '双语' },
@@ -184,28 +256,18 @@ export function PlayerPanel({
               ))}
             </div>
 
-            <div className="control-row">
-              <label className="field compact-field">
-                <span>字幕字号</span>
-                <input
-                  type="range"
-                  min="16"
-                  max="34"
-                  value={fontSize}
-                  onChange={(event) => setFontSize(Number(event.target.value))}
-                />
-              </label>
+            <label className="field compact-field">
+              <span>字幕字号：{fontSize}px</span>
+              <input
+                type="range"
+                min="16"
+                max="34"
+                value={fontSize}
+                onChange={(event) => setFontSize(Number(event.target.value))}
+              />
+            </label>
 
-              <button
-                type="button"
-                className={`secondary-button${loopCurrentLine ? ' active' : ''}`}
-                onClick={() => setLoopCurrentLine(!loopCurrentLine)}
-              >
-                {loopCurrentLine ? '已开启句子循环' : '开启句子循环'}
-              </button>
-            </div>
-
-            <div className="speed-row">
+            <div className="speed-row" aria-label="视频播放倍速">
               {rates.map((rate) => (
                 <button
                   key={rate}
@@ -217,6 +279,14 @@ export function PlayerPanel({
                 </button>
               ))}
             </div>
+
+            <button
+              type="button"
+              className={`secondary-button loop-button${loopCurrentLine ? ' active' : ''}`}
+              onClick={() => setLoopCurrentLine(!loopCurrentLine)}
+            >
+              {loopCurrentLine ? '已开启句子循环' : '开启句子循环'}
+            </button>
           </div>
         </div>
 
