@@ -36,7 +36,7 @@ export function AppShell() {
 
         <div className="sidebar-note">
           <strong>当前方向</strong>
-          <span>持续收口 UI、字幕重译链路与 PWA 体验，让它更像一个真正的学习产品。</span>
+          <span>继续收口 UI、字幕重译链路与 PWA 体验，把它压成一个更直接的学习工作台。</span>
         </div>
       </aside>
 

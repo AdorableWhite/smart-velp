@@ -82,7 +82,7 @@ public class DoubaoTranslationService implements TranslationService {
                 progressCallback.accept(100);
             }
         } catch (Exception e) {
-            log.error("Doubao translation failed", e);
+            log.warn("Doubao translation failed: {}", e.getMessage());
             throw new RuntimeException("Doubao Translation error: " + e.getMessage());
         }
     }

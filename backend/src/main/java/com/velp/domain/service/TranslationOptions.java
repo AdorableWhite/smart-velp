@@ -30,15 +30,6 @@ public class TranslationOptions {
         if ("free".equals(normalized)) {
             return "doubao";
         }
-        if ("openai-compatible".equals(normalized)
-                || "custom".equals(normalized)
-                || "siliconflow".equals(normalized)
-                || "zhipu".equals(normalized)
-                || "qwen".equals(normalized)
-                || "gemini".equals(normalized)
-                || "claude".equals(normalized)) {
-            return "openai";
-        }
         return normalized;
     }
 }

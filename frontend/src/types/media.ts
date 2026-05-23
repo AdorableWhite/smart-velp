@@ -20,9 +20,14 @@ export interface TaskSummary {
   status: TaskState;
   progress: number;
   videoId?: string | null;
+  error?: string | null;
   url: string;
   title: string;
+  sourceLang?: string | null;
+  targetLang?: string | null;
   createdAt: number;
+  assetAvailable?: boolean | null;
+  assetMessage?: string | null;
 }
 
 export interface AnalyzeRequest {
@@ -49,6 +54,8 @@ export interface ParserStatusResponse {
   progress: number;
   videoId?: string | null;
   error?: string | null;
+  message?: string | null;
+  url?: string | null;
   title?: string | null;
   sourceLang?: string | null;
   targetLang?: string | null;
@@ -140,4 +147,31 @@ export interface TranslationProfilePayload {
   model: string;
   apiKey: string;
   prompt?: string;
+}
+
+export interface TranslationProviderHealth {
+  consecutiveFailures: number;
+  openUntilEpochMs: number;
+  circuitOpen: boolean;
+}
+
+export interface TranslationTestResponse {
+  ok: boolean;
+  message: string;
+  translatedText: string;
+  elapsedMs: number;
+  providerChain?: string[];
+  providerHealth?: Record<string, TranslationProviderHealth>;
+}
+
+export interface DownloadDiagnostics {
+  ytDlpPath: string;
+  ytDlpVersion?: string | null;
+  ffmpegPath?: string | null;
+  ffmpegAvailable: boolean;
+  cookiesConfigured: boolean;
+  cookieSource: string;
+  forceIpv4: boolean;
+  timeoutMinutes: number;
+  formatFallbacks: string[];
 }

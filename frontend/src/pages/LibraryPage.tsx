@@ -2,11 +2,19 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TaskList } from '../components/library/TaskList';
-import { clearFailedTasks, deleteTask, fetchTaskStatus, fetchTasks, submitLocalSubtitleAnalyze } from '../services/api/media';
+import {
+  clearFailedTasks,
+  deleteTask,
+  fetchDownloadDiagnostics,
+  fetchTaskStatus,
+  fetchTasks,
+  submitAnalyze,
+  submitLocalSubtitleAnalyze
+} from '../services/api/media';
 import { getImportedMedia, listImportedMedia, updateImportedMediaSubtitleTask } from '../services/storage/localMedia';
 import { getPreferredTranslationProfile } from '../services/storage/translationProfiles';
 import { usePreferencesStore } from '../store/usePreferencesStore';
-import type { ImportedMediaSummary } from '../types/media';
+import type { DownloadDiagnostics, ImportedMediaSummary, TaskSummary } from '../types/media';
 
 const localStatusLabel: Record<string, string> = {
   pending: '字幕排队中',
@@ -14,6 +22,42 @@ const localStatusLabel: Record<string, string> = {
   completed: '字幕已更新',
   failed: '字幕重译失败'
 };
+
+function buildDownloadReadiness(diagnostics?: DownloadDiagnostics) {
+  if (!diagnostics) {
+    return undefined;
+  }
+
+  const issues: string[] = [];
+  if (!diagnostics.ytDlpPath) {
+    issues.push('未检测到 yt-dlp，无法下载 YouTube 视频。');
+  }
+  if (!diagnostics.ffmpegAvailable) {
+    issues.push('未检测到 ffmpeg，高质量音视频合并和部分格式会更容易失败。');
+  }
+  if (!diagnostics.cookiesConfigured) {
+    issues.push('未配置 Cookies，登录验证、年龄限制和反机器人校验类视频可能失败。');
+  }
+  if (diagnostics.formatFallbacks.length < 2) {
+    issues.push('格式回退较少，遇到特殊视频时容错能力偏弱。');
+  }
+
+  if (!issues.length) {
+    return {
+      level: 'ready',
+      title: 'YouTube 下载环境稳定',
+      description: 'yt-dlp、ffmpeg、Cookies 和格式回退都已就绪。',
+      issues
+    };
+  }
+
+  return {
+    level: diagnostics.ytDlpPath ? 'warning' : 'danger',
+    title: diagnostics.ytDlpPath ? 'YouTube 下载环境有风险' : 'YouTube 下载环境不可用',
+    description: issues[0],
+    issues
+  };
+}
 
 export function LibraryPage() {
   const navigate = useNavigate();
@@ -28,6 +72,27 @@ export function LibraryPage() {
     queryFn: fetchTasks,
     refetchInterval: 10_000
   });
+
+  const downloadDiagnosticsQuery = useQuery({
+    queryKey: ['download-diagnostics'],
+    queryFn: fetchDownloadDiagnostics,
+    refetchInterval: 60_000
+  });
+
+  const downloadReadiness = useMemo(
+    () => buildDownloadReadiness(downloadDiagnosticsQuery.data),
+    [downloadDiagnosticsQuery.data]
+  );
+
+  const taskHealth = useMemo(() => {
+    const tasks = tasksQuery.data ?? [];
+    return {
+      ready: tasks.filter((task) => task.status === 'completed' && task.assetAvailable !== false).length,
+      running: tasks.filter((task) => task.status === 'pending' || task.status === 'processing').length,
+      failed: tasks.filter((task) => task.status === 'failed').length,
+      assetMissing: tasks.filter((task) => task.status === 'completed' && task.assetAvailable === false).length
+    };
+  }, [tasksQuery.data]);
 
   useEffect(() => {
     void listImportedMedia().then(setLocalItems);
@@ -74,11 +139,32 @@ export function LibraryPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] })
   });
 
+  const retryMutation = useMutation({
+    mutationFn: async (task: TaskSummary) => {
+      const selectedProfile = await getPreferredTranslationProfile(selectedProfileId);
+      return submitAnalyze({
+        url: task.url,
+        sourceLang: task.sourceLang ?? sourceLang,
+        targetLang: task.targetLang ?? targetLang,
+        translationProfile: selectedProfile
+          ? {
+              provider: selectedProfile.provider,
+              baseUrl: selectedProfile.baseUrl,
+              model: selectedProfile.model,
+              apiKey: selectedProfile.apiKey,
+              prompt: selectedProfile.prompt
+            }
+          : undefined
+      });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] })
+  });
+
   const retranslateMutation = useMutation({
     mutationFn: async (itemId: string) => {
       const item = await getImportedMedia(itemId);
       if (!item?.subtitleFile) {
-        throw new Error('该本地内容没有字幕文件');
+        throw new Error('该本地内容没有字幕文件。');
       }
 
       const selectedProfile = await getPreferredTranslationProfile(selectedProfileId);
@@ -92,12 +178,12 @@ export function LibraryPage() {
         translationProfile: selectedProfile
           ? {
               provider: selectedProfile.provider,
-            baseUrl: selectedProfile.baseUrl,
-            model: selectedProfile.model,
-            apiKey: selectedProfile.apiKey,
-            prompt: selectedProfile.prompt
-          }
-        : undefined
+              baseUrl: selectedProfile.baseUrl,
+              model: selectedProfile.model,
+              apiKey: selectedProfile.apiKey,
+              prompt: selectedProfile.prompt
+            }
+          : undefined
       });
 
       await updateImportedMediaSubtitleTask(itemId, result.taskId);
@@ -120,10 +206,58 @@ export function LibraryPage() {
           </button>
         </div>
 
+        {downloadReadiness ? (
+          <div className={`diagnostics-panel diagnostics-panel-${downloadReadiness.level}`}>
+            <div>
+              <strong>{downloadReadiness.title}</strong>
+              <span>{downloadReadiness.description}</span>
+            </div>
+            {downloadReadiness.issues.length > 1 ? (
+              <span className="diagnostics-count">{downloadReadiness.issues.length} 项需要关注</span>
+            ) : null}
+          </div>
+        ) : null}
+
+        {downloadDiagnosticsQuery.data ? (
+          <div className="diagnostics-row">
+            <span>yt-dlp {downloadDiagnosticsQuery.data.ytDlpVersion ?? 'unknown'}</span>
+            <span title={downloadDiagnosticsQuery.data.ffmpegPath ?? undefined}>
+              {downloadDiagnosticsQuery.data.ffmpegAvailable ? 'ffmpeg 可用，支持高质量合并' : 'ffmpeg 未安装，使用无合并回退'}
+            </span>
+            <span>
+              {downloadDiagnosticsQuery.data.cookiesConfigured
+                ? `Cookies ${downloadDiagnosticsQuery.data.cookieSource}`
+                : '未启用 Cookies'}
+            </span>
+            <span>{downloadDiagnosticsQuery.data.formatFallbacks.length} 组格式回退</span>
+            <span>{downloadDiagnosticsQuery.data.timeoutMinutes} 分钟超时</span>
+          </div>
+        ) : null}
+
+        <div className="task-health-row" aria-label="任务健康概览">
+          <span>
+            <strong>{taskHealth.ready}</strong>
+            可学习
+          </span>
+          <span>
+            <strong>{taskHealth.running}</strong>
+            处理中
+          </span>
+          <span>
+            <strong>{taskHealth.failed}</strong>
+            失败
+          </span>
+          <span>
+            <strong>{taskHealth.assetMissing}</strong>
+            资源缺失
+          </span>
+        </div>
+
         <TaskList
           tasks={tasksQuery.data ?? []}
           onOpen={(taskId) => navigate(`/study/backend/${taskId}`)}
           onDelete={(taskId) => deleteMutation.mutate(taskId)}
+          onRetry={(task) => retryMutation.mutate(task)}
         />
       </section>
 

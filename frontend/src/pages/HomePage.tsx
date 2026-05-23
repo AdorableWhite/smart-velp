@@ -82,7 +82,8 @@ export function HomePage() {
             provider: selectedProfile.provider,
             baseUrl: selectedProfile.baseUrl,
             model: selectedProfile.model,
-            apiKey: selectedProfile.apiKey
+            apiKey: selectedProfile.apiKey,
+            prompt: selectedProfile.prompt
           }
         : undefined
     });
@@ -130,12 +131,12 @@ export function HomePage() {
         translationProfile: selectedProfile
           ? {
               provider: selectedProfile.provider,
-            baseUrl: selectedProfile.baseUrl,
-            model: selectedProfile.model,
-            apiKey: selectedProfile.apiKey,
-            prompt: selectedProfile.prompt
-          }
-        : undefined
+              baseUrl: selectedProfile.baseUrl,
+              model: selectedProfile.model,
+              apiKey: selectedProfile.apiKey,
+              prompt: selectedProfile.prompt
+            }
+          : undefined
       });
       subtitleTaskId = result.taskId;
     }

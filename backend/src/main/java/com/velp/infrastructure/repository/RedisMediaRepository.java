@@ -112,6 +112,7 @@ public class RedisMediaRepository implements MediaRepository {
                                 status.status(),
                                 status.progress(),
                                 status.videoId(),
+                                status.error(),
                                 status.url(),
                                 status.title(),
                                 status.sourceLang(),

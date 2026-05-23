@@ -68,6 +68,8 @@ export function PlayerPanel({
   const [currentIndex, setCurrentIndex] = useState(-1);
   const [exportProgress, setExportProgress] = useState<number | undefined>();
   const [exportError, setExportError] = useState<string>();
+  const [exportMessage, setExportMessage] = useState<string>();
+  const [exportController, setExportController] = useState<AbortController>();
   const subtitleMode = usePreferencesStore((state) => state.subtitleMode);
   const setSubtitleMode = usePreferencesStore((state) => state.setSubtitleMode);
   const playbackRate = usePreferencesStore((state) => state.playbackRate);
@@ -126,7 +128,11 @@ export function PlayerPanel({
   };
 
   const onExport = async () => {
-    if (!videoSrc || isExporting) {
+    if (isExporting) {
+      exportController?.abort();
+      return;
+    }
+    if (!videoSrc) {
       return;
     }
 
@@ -137,7 +143,10 @@ export function PlayerPanel({
     }
 
     setExportError(undefined);
+    setExportMessage(undefined);
     setExportProgress(0);
+    const controller = new AbortController();
+    setExportController(controller);
     try {
       await exportRenderedVideo({
         videoSrc,
@@ -145,12 +154,20 @@ export function PlayerPanel({
         subtitles,
         subtitleMode,
         fontSize,
+        playbackRate,
+        signal: controller.signal,
         onProgress: setExportProgress
       });
+      setExportMessage('字幕版视频已生成');
     } catch (error) {
-      setExportError(error instanceof Error ? error.message : '导出失败');
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        setExportMessage('导出已取消');
+      } else {
+        setExportError(error instanceof Error ? error.message : '导出失败');
+      }
     } finally {
       setExportProgress(undefined);
+      setExportController(undefined);
       if (player && !wasPaused) {
         void player.play();
       }
@@ -207,12 +224,11 @@ export function PlayerPanel({
                   <button
                     type="button"
                     className="icon-button"
-                    title="按当前字幕设置导出视频"
-                    aria-label="按当前字幕设置导出视频"
-                    disabled={isExporting}
+                    title={isExporting ? '取消导出' : '按当前字幕设置导出视频'}
+                    aria-label={isExporting ? '取消导出' : '按当前字幕设置导出视频'}
                     onClick={() => void onExport()}
                   >
-                    ↓
+                    {isExporting ? '×' : '↓'}
                   </button>
                 ) : null}
                 {onRetranslate ? (
@@ -233,9 +249,10 @@ export function PlayerPanel({
             {isExporting ? (
               <div className="export-progress">
                 <span style={{ width: `${Math.max(4, Math.round((exportProgress ?? 0) * 100))}%` }} />
-                <small>正在按当前字幕设置导出 {Math.round((exportProgress ?? 0) * 100)}%</small>
+                <small>正在按当前字幕、字号和 {playbackRate}x 倍速导出 {Math.round((exportProgress ?? 0) * 100)}%，再次点击下载按钮可取消</small>
               </div>
             ) : null}
+            {exportMessage ? <p className="test-result ok">{exportMessage}</p> : null}
             {exportError ? <p className="test-result failed">{exportError}</p> : null}
 
             <div className="segmented">

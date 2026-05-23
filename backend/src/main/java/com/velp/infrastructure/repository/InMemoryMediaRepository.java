@@ -45,10 +45,35 @@ public class InMemoryMediaRepository implements MediaRepository {
             try {
                 Map<String, TaskStatus> loaded = objectMapper.readValue(file, new TypeReference<Map<String, TaskStatus>>() {});
                 taskMap.putAll(loaded);
+                markInterruptedTasksFailed();
                 log.info("Loaded {} tasks from {}", taskMap.size(), file.getAbsolutePath());
             } catch (Exception e) {
                 log.error("Failed to load tasks from persistence", e);
             }
+        }
+    }
+
+    private void markInterruptedTasksFailed() {
+        boolean changed = false;
+        for (Map.Entry<String, TaskStatus> entry : taskMap.entrySet()) {
+            TaskStatus task = entry.getValue();
+            if (AppConstants.TaskStatus.PENDING.equals(task.status()) || AppConstants.TaskStatus.PROCESSING.equals(task.status())) {
+                entry.setValue(new TaskStatus(
+                        AppConstants.TaskStatus.FAILED,
+                        task.progress(),
+                        task.videoId(),
+                        "服务重启后该后台任务已中断，请重新提交。",
+                        task.url(),
+                        task.title(),
+                        task.sourceLang(),
+                        task.targetLang(),
+                        task.createdAt()
+                ));
+                changed = true;
+            }
+        }
+        if (changed) {
+            persistTasks();
         }
     }
 
@@ -104,6 +129,7 @@ public class InMemoryMediaRepository implements MediaRepository {
                         e.getValue().status(), 
                         e.getValue().progress(), 
                         e.getValue().videoId(), 
+                        e.getValue().error(),
                         e.getValue().url(), 
                         e.getValue().title(),
                         e.getValue().sourceLang(),

@@ -1,15 +1,4 @@
-const getApiBase = () => {
-  if (import.meta.env.VITE_API_BASE) {
-    return import.meta.env.VITE_API_BASE;
-  }
-
-  const hostname = window.location.hostname;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return '';
-  }
-
-  return '';
-};
+const getApiBase = () => import.meta.env.VITE_API_BASE ?? '';
 
 export const API_BASE = getApiBase();
 
@@ -17,7 +6,15 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
   const response = await fetch(`${API_BASE}${path}`, init);
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Request failed with status ${response.status}`);
+    let parsedMessage = '';
+    try {
+      const payload = JSON.parse(text) as { message?: string; error?: string };
+      parsedMessage = payload.message || payload.error || '';
+    } catch {
+      parsedMessage = '';
+    }
+    const readableText = parsedMessage || text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    throw new Error(readableText || `请求失败：${response.status}`);
   }
   return response.json() as Promise<T>;
 }
@@ -29,4 +26,3 @@ export function buildAbsoluteUrl(path: string) {
 
   return `${API_BASE}${path}`;
 }
-

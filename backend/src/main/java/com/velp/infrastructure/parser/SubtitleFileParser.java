@@ -12,13 +12,21 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
 public class SubtitleFileParser {
+    private static final Pattern TAG_PATTERN = Pattern.compile("<[^>]+>");
+    private static final Pattern ENTITY_LRM_RLM = Pattern.compile("&(?:lrm|rlm);", Pattern.CASE_INSENSITIVE);
 
     public List<SubtitleLine> parseVtt(File vttFile) {
+        return parseVtt(vttFile, "en");
+    }
+
+    public List<SubtitleLine> parseVtt(File vttFile, String sourceLang) {
         if (!vttFile.exists()) {
             return new ArrayList<>();
         }
@@ -26,7 +34,7 @@ public class SubtitleFileParser {
         // Use UTF-8 explicitly
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(vttFile), StandardCharsets.UTF_8))) {
             String content = reader.lines().reduce("", (left, right) -> left + "\n" + right);
-            return parseContent(content, "vtt", "en");
+            return parseContent(content, "vtt", sourceLang);
         } catch (IOException e) {
             log.error("Failed to parse VTT file: {}", vttFile.getAbsolutePath(), e);
         }
@@ -53,10 +61,18 @@ public class SubtitleFileParser {
             String[] rows = block.split("\n");
             String timingRow = null;
             StringBuilder textBuffer = new StringBuilder();
+            boolean skipBlock = false;
 
             for (String rawLine : rows) {
                 String line = rawLine.trim();
-                if (line.isEmpty() || line.equals(AppConstants.Subtitle.WEBVTT_HEADER) || line.matches("^\\d+$")) {
+                String upperLine = line.toUpperCase();
+                if (line.isEmpty()
+                        || upperLine.equals(AppConstants.Subtitle.WEBVTT_HEADER)
+                        || upperLine.startsWith("NOTE")
+                        || upperLine.startsWith("STYLE")
+                        || upperLine.startsWith("REGION")
+                        || line.matches("^\\d+$")) {
+                    skipBlock = upperLine.startsWith("NOTE") || upperLine.startsWith("STYLE") || upperLine.startsWith("REGION");
                     continue;
                 }
 
@@ -68,10 +84,10 @@ public class SubtitleFileParser {
                 if (textBuffer.length() > 0) {
                     textBuffer.append(" ");
                 }
-                textBuffer.append(line);
+                textBuffer.append(cleanSubtitleText(line));
             }
 
-            if (timingRow == null) {
+            if (skipBlock || timingRow == null) {
                 continue;
             }
 
@@ -81,19 +97,23 @@ public class SubtitleFileParser {
             }
 
             SubtitleLine subtitleLine = new SubtitleLine();
-            subtitleLine.setStartTime(parseTime(times[0].trim()));
-            subtitleLine.setEndTime(parseTime(times[1].trim()));
-            subtitleLine.setSourcePayload(textBuffer.toString().trim(), sourceLang == null || sourceLang.isBlank() ? "en" : sourceLang);
+            subtitleLine.setStartTime(parseTime(extractTimestamp(times[0])));
+            subtitleLine.setEndTime(parseTime(extractTimestamp(times[1])));
+            String text = textBuffer.toString().replaceAll("\\s+", " ").trim();
+            if (text.isBlank() || subtitleLine.getEndTime() <= subtitleLine.getStartTime()) {
+                continue;
+            }
+            subtitleLine.setSourcePayload(text, sourceLang == null || sourceLang.isBlank() ? "en" : sourceLang);
             subtitleLine.setTargetPayload("", null);
             lines.add(subtitleLine);
         }
 
-        return lines;
+        return normalizeTimeline(lines);
     }
 
     private double parseTime(String timeString) {
         try {
-            String[] parts = timeString.split(":");
+            String[] parts = timeString.replace(',', '.').split(":");
             if (parts.length == 3) {
                 double hours = Double.parseDouble(parts[0]);
                 double minutes = Double.parseDouble(parts[1]);
@@ -104,6 +124,19 @@ public class SubtitleFileParser {
             log.warn("Failed to parse time string: {}", timeString);
         }
         return 0.0;
+    }
+
+    private String extractTimestamp(String rawTimestamp) {
+        String cleaned = rawTimestamp == null ? "" : rawTimestamp.trim().replace(',', '.');
+        int firstSpace = cleaned.indexOf(' ');
+        return firstSpace > 0 ? cleaned.substring(0, firstSpace) : cleaned;
+    }
+
+    private String cleanSubtitleText(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        return ENTITY_LRM_RLM.matcher(TAG_PATTERN.matcher(text).replaceAll("")).replaceAll("");
     }
 
     public List<SubtitleLine> mergeSubtitles(List<SubtitleLine> enSubs, List<SubtitleLine> cnSubs) {
@@ -122,5 +155,47 @@ public class SubtitleFileParser {
         double start = Math.max(s1.getStartTime(), s2.getStartTime());
         double end = Math.min(s1.getEndTime(), s2.getEndTime());
         return end > start;
+    }
+
+    private List<SubtitleLine> normalizeTimeline(List<SubtitleLine> lines) {
+        List<SubtitleLine> normalized = new ArrayList<>();
+        lines.stream()
+                .sorted(Comparator.comparingDouble(SubtitleLine::getStartTime)
+                        .thenComparingDouble(SubtitleLine::getEndTime))
+                .forEach(line -> {
+                    if (line.getEndTime() <= line.getStartTime()) {
+                        return;
+                    }
+
+                    String text = line.getEffectiveSourceText();
+                    if (text == null || text.isBlank()) {
+                        return;
+                    }
+
+                    if (!normalized.isEmpty()) {
+                        SubtitleLine previous = normalized.get(normalized.size() - 1);
+                        if (isDuplicateCue(previous, line)) {
+                            return;
+                        }
+                        if (line.getStartTime() < previous.getEndTime()) {
+                            line.setStartTime(Math.min(line.getEndTime(), previous.getEndTime()));
+                        }
+                    }
+
+                    if (line.getEndTime() > line.getStartTime()) {
+                        normalized.add(line);
+                    }
+                });
+        return normalized;
+    }
+
+    private boolean isDuplicateCue(SubtitleLine left, SubtitleLine right) {
+        return Math.abs(left.getStartTime() - right.getStartTime()) < 0.05
+                && Math.abs(left.getEndTime() - right.getEndTime()) < 0.05
+                && normalizeText(left.getEffectiveSourceText()).equals(normalizeText(right.getEffectiveSourceText()));
+    }
+
+    private String normalizeText(String text) {
+        return text == null ? "" : text.replaceAll("\\s+", " ").trim();
     }
 }

@@ -12,6 +12,8 @@ public class ParserStatusResponse {
     private int progress;
     private String videoId;
     private String error;
+    private String message;
+    private String url;
     private String title;
     private String sourceLang;
     private String targetLang;

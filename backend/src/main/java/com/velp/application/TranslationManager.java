@@ -106,7 +106,7 @@ public class TranslationManager implements TranslationService {
             return;
         }
 
-        List<String> providerChain = buildProviderChain(runtimeOptions);
+        List<String> providerChain = getProviderChain(runtimeOptions);
         if (providerChain.isEmpty()) {
             throw new RuntimeException("No translation providers configured");
         }
@@ -127,13 +127,16 @@ public class TranslationManager implements TranslationService {
         }
     }
 
-    private List<String> buildProviderChain(TranslationOptions options) {
+    public List<String> getProviderChain(TranslationOptions options) {
         List<String> providers = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         String runtimePreferred = options == null ? null : options.normalizedProvider();
         if (runtimePreferred != null && !runtimePreferred.isBlank()) {
             if (seen.add(runtimePreferred.toLowerCase())) {
                 providers.add(runtimePreferred);
+            }
+            if (hasExplicitRuntimeEndpoint(options)) {
+                return providers;
             }
         }
         if (preferredProvider != null && !preferredProvider.trim().isEmpty()) {
@@ -155,16 +158,31 @@ public class TranslationManager implements TranslationService {
         return providers;
     }
 
+    private boolean hasExplicitRuntimeEndpoint(TranslationOptions options) {
+        if (options == null) {
+            return false;
+        }
+        if ("free".equalsIgnoreCase(options.getProvider())) {
+            return false;
+        }
+        return (options.getBaseUrl() != null && !options.getBaseUrl().isBlank())
+                || (options.getApiKey() != null && !options.getApiKey().isBlank())
+                || (options.getModel() != null && !options.getModel().isBlank());
+    }
+
     private void translateBatchWithFallback(List<SubtitleLine> batch, List<String> providerChain, TranslationOptions options) {
         RuntimeException lastError = null;
+        List<String> providerErrors = new ArrayList<>();
         for (String provider : providerChain) {
             if (isCircuitOpen(provider)) {
                 log.warn("Provider {} is in cooldown, skipping", provider);
+                providerErrors.add(provider + ": circuit open");
                 continue;
             }
             TranslationService service = factory.getService(provider);
             if (service == null) {
                 log.warn("Provider {} not available in factory, skipping", provider);
+                providerErrors.add(provider + ": unsupported provider");
                 continue;
             }
             for (int attempt = 1; attempt <= Math.max(1, maxAttempts); attempt++) {
@@ -177,12 +195,16 @@ public class TranslationManager implements TranslationService {
                     return;
                 } catch (IllegalStateException e) {
                     log.warn("Provider {} unavailable: {}", provider, e.getMessage());
-                    lastError = new RuntimeException(e);
-                    recordSuccess(provider);
+                    providerErrors.add(provider + ": " + e.getMessage());
+                    if (lastError == null) {
+                        lastError = new RuntimeException(e);
+                    }
+                    recordUnavailable(provider);
                     break;
                 } catch (Exception e) {
                     long elapsedMs = (System.nanoTime() - start) / 1_000_000;
                     log.warn("Provider {} failed attempt {} ({} ms): {}", provider, attempt, elapsedMs, e.getMessage());
+                    providerErrors.add(provider + " attempt " + attempt + ": " + e.getMessage());
                     lastError = new RuntimeException(e);
                     if (attempt >= Math.max(1, maxAttempts)) {
                         recordFailure(provider);
@@ -190,10 +212,41 @@ public class TranslationManager implements TranslationService {
                 }
             }
         }
+        String failureSummary = String.join(" | ", providerErrors);
         if (lastError != null) {
-            throw new RuntimeException("All translation providers failed for current batch", lastError);
+            throw new RuntimeException("翻译服务不可用：" + explainTranslationFailure(failureSummary, lastError), lastError);
         }
-        throw new RuntimeException("All translation providers unavailable for current batch");
+        throw new RuntimeException("翻译服务不可用：没有可用的翻译服务，请先在设置页配置并测试。");
+    }
+
+    private String explainTranslationFailure(String summary, Throwable error) {
+        Throwable cursor = error;
+        StringBuilder messages = new StringBuilder(summary == null ? "" : summary);
+        while (cursor != null) {
+            if (cursor.getMessage() != null && !cursor.getMessage().isBlank()) {
+                if (messages.length() > 0) {
+                    messages.append(" | ");
+                }
+                messages.append(cursor.getMessage());
+            }
+            cursor = cursor.getCause();
+        }
+
+        String raw = messages.toString();
+        String lower = raw.toLowerCase();
+        if (lower.contains("setlimitexceeded") || lower.contains("too many requests") || lower.contains("http 429")) {
+            return "服务额度已用尽或触发限流，请更换可用服务、调整服务端额度，或填入自己的 API Key。";
+        }
+        if (lower.contains("authentication") || lower.contains("invalid") || lower.contains("http 401") || lower.contains("api key")) {
+            return "API Key 无效或缺失，请在设置页检查对应服务的 API Key。";
+        }
+        if (lower.contains("disabled") || lower.contains("missing configuration") || lower.contains("unavailable")) {
+            return "服务未启用或缺少配置，请在设置页保存服务配置后再测试。";
+        }
+        if (lower.contains("timeout") || lower.contains("timed out")) {
+            return "请求超时，请稍后重试或切换网络/服务。";
+        }
+        return raw.isBlank() ? "未知错误，请查看后端日志。" : raw;
     }
 
     private int applyCache(List<SubtitleLine> candidates, TranslationOptions options) {
@@ -269,8 +322,26 @@ public class TranslationManager implements TranslationService {
         state.openUntilEpochMs = 0;
     }
 
+    private void recordUnavailable(String provider) {
+        failureStates.computeIfAbsent(provider, key -> new FailureState());
+    }
+
+    public Map<String, ProviderHealth> getProviderHealth() {
+        return failureStates.entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> new ProviderHealth(
+                                entry.getValue().consecutiveFailures,
+                                entry.getValue().openUntilEpochMs,
+                                isCircuitOpen(entry.getKey())
+                        )
+                ));
+    }
+
     private static class FailureState {
         private int consecutiveFailures = 0;
         private long openUntilEpochMs = 0;
     }
+
+    public record ProviderHealth(int consecutiveFailures, long openUntilEpochMs, boolean circuitOpen) {}
 }

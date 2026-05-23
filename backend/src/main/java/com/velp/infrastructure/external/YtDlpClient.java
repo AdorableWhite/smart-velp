@@ -15,8 +15,13 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 @Slf4j
 @Component
@@ -25,14 +30,33 @@ public class YtDlpClient {
     @Value("${velp.ytdlp.path:yt-dlp}")
     private String ytDlpPath;
 
+    @Value("${velp.ytdlp.timeout-minutes:20}")
+    private long timeoutMinutes;
+
+    @Value("${velp.ffmpeg.path:ffmpeg}")
+    private String ffmpegPath;
+
+    @Value("${velp.ytdlp.cookies.path:}")
+    private String cookiesPath;
+
+    @Value("${velp.ytdlp.cookies-from-browser:}")
+    private String cookiesFromBrowser;
+
+    @Value("${velp.ytdlp.force-ipv4:false}")
+    private boolean forceIpv4;
+
     private String resolvedYtDlpPath;
+    private String resolvedFfmpegPath;
+    private boolean ffmpegAvailable;
 
     @PostConstruct
     public void init() {
         resolvedYtDlpPath = resolveYtDlpPath();
+        resolvedFfmpegPath = resolveFfmpegPath();
+        ffmpegAvailable = resolvedFfmpegPath != null;
         String version = tryGetVersion(resolvedYtDlpPath);
         if (version != null) {
-            log.info("Initialized YtDlpClient using {} (version: {})", resolvedYtDlpPath, version);
+            log.info("Initialized YtDlpClient using {} (version: {}, ffmpeg: {})", resolvedYtDlpPath, version, ffmpegAvailable ? resolvedFfmpegPath : "not found");
         } else {
             log.warn("Failed to initialize yt-dlp. Tried: {}", resolvedYtDlpPath);
         }
@@ -42,7 +66,9 @@ public class YtDlpClient {
         try {
             List<String> command = new ArrayList<>();
             command.add(resolvedYtDlpPath);
-            command.add("--get-title");
+            command.add("--print");
+            command.add("%(title)s");
+            command.add("--no-warnings");
             command.add("--no-playlist");
             command.add("--ignore-errors");
             command.add("--no-check-certificates");
@@ -51,12 +77,24 @@ public class YtDlpClient {
             command.add(url);
 
             ProcessBuilder pb = new ProcessBuilder(command);
+            pb.redirectErrorStream(true);
             Process process = pb.start();
+            List<String> outputLines = Collections.synchronizedList(new ArrayList<>());
+            CompletableFuture<Void> outputReader = CompletableFuture.runAsync(() -> readProcessOutput(process, outputLines, null));
 
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String title = reader.readLine();
-                if (title != null && !title.isEmpty()) {
-                    return title;
+            boolean finished = process.waitFor(45, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                log.warn("Timed out getting video title for {}", url);
+                return "Unknown Video";
+            }
+            outputReader.join();
+
+            synchronized (outputLines) {
+                for (String line : outputLines) {
+                    if (isLikelyTitleLine(line)) {
+                        return line.trim();
+                    }
                 }
             }
         } catch (Exception e) {
@@ -65,17 +103,89 @@ public class YtDlpClient {
         return "Unknown Video";
     }
 
-    public void downloadVideo(String url, String outputTemplate, java.util.function.Consumer<Integer> progressCallback) throws IOException, InterruptedException {
+    private boolean isLikelyTitleLine(String line) {
+        if (line == null || line.isBlank()) {
+            return false;
+        }
+
+        String normalized = line.trim();
+        String lower = normalized.toLowerCase(Locale.ROOT);
+        return !lower.startsWith("warning:")
+                && !lower.startsWith("error:")
+                && !lower.startsWith("[youtube]")
+                && !lower.startsWith("[download]")
+                && !lower.startsWith("it is strongly recommended")
+                && !lower.contains("update yt-dlp")
+                && !lower.contains("latest version");
+    }
+
+    public void downloadVideo(String url, String outputTemplate, String sourceLang, String targetLang, Consumer<Integer> progressCallback) throws IOException, InterruptedException {
+        List<String> formats = buildFormatFallbacks();
+        RuntimeException lastError = null;
+
+        for (int i = 0; i < formats.size(); i++) {
+            String format = formats.get(i);
+            try {
+                log.info("yt-dlp attempt {}/{} using format {}", i + 1, formats.size(), format);
+                runDownload(url, outputTemplate, format, buildSubtitleLanguages(sourceLang, targetLang), progressCallback);
+                return;
+            } catch (RuntimeException e) {
+                lastError = e;
+                log.warn("yt-dlp attempt {}/{} failed: {}", i + 1, formats.size(), e.getMessage());
+            }
+        }
+
+        throw lastError == null ? new RuntimeException("yt-dlp failed without details") : lastError;
+    }
+
+    public DownloadDiagnostics getDiagnostics() {
+        return new DownloadDiagnostics(
+                resolvedYtDlpPath,
+                tryGetVersion(resolvedYtDlpPath),
+                resolvedFfmpegPath,
+                ffmpegAvailable,
+                isCookieSourceConfigured(),
+                describeCookieSource(),
+                forceIpv4,
+                timeoutMinutes,
+                buildFormatFallbacks()
+        );
+    }
+
+    private void runDownload(String url, String outputTemplate, String format, String subtitleLanguages, Consumer<Integer> progressCallback) throws IOException, InterruptedException {
         List<String> command = new ArrayList<>();
         command.add(resolvedYtDlpPath);
         command.add("-f");
-        command.add(AppConstants.YtDlp.FORMAT_BEST);
+        command.add(format);
+        if (ffmpegAvailable) {
+            command.add("--merge-output-format");
+            command.add("mp4");
+            command.add("--ffmpeg-location");
+            command.add(resolveFfmpegLocation());
+        }
         command.add("--write-sub");
         command.add("--write-auto-sub");
+        command.add("--write-info-json");
         command.add("--sub-lang");
-        command.add(AppConstants.YtDlp.SUB_LANGS);
+        command.add(subtitleLanguages);
+        if (ffmpegAvailable) {
+            command.add("--convert-subs");
+            command.add("vtt");
+        }
         command.add("--geo-bypass");
-        command.add("--ignore-errors");
+        addCookieArgs(command);
+        if (forceIpv4) {
+            command.add("--force-ipv4");
+        }
+        command.add("--retries");
+        command.add("5");
+        command.add("--fragment-retries");
+        command.add("10");
+        command.add("--retry-sleep");
+        command.add("linear=1::2");
+        command.add("--socket-timeout");
+        command.add("30");
+        command.add("--newline");
         command.add("--no-playlist");
         command.add("--no-cache-dir");
         command.add("--no-check-certificates");
@@ -94,44 +204,155 @@ public class YtDlpClient {
         pb.redirectErrorStream(true);
         Process process = pb.start();
 
-        List<String> outputLines = new ArrayList<>();
+        List<String> outputLines = Collections.synchronizedList(new ArrayList<>());
         
+        CompletableFuture<Void> outputReader = CompletableFuture.runAsync(() -> readProcessOutput(process, outputLines, progressCallback));
+
+        boolean finished = process.waitFor(Math.max(1, timeoutMinutes), TimeUnit.MINUTES);
+        if (!finished) {
+            process.destroyForcibly();
+            String outputTail = tail(outputLines, 12);
+            throw new RuntimeException(YtDlpFailureClassifier.classify(outputTail)
+                    + "\n\n原始摘要：yt-dlp timed out after " + timeoutMinutes + " minutes. Last output: " + outputTail);
+        }
+        outputReader.join();
+        
+        int exitCode = process.exitValue();
+        if (exitCode != 0) {
+            String fullOutput;
+            synchronized (outputLines) {
+                fullOutput = String.join("\n", outputLines);
+            }
+            log.error("yt-dlp failed. Output:\n{}", fullOutput);
+            String outputTail = tail(outputLines, 12);
+            throw new RuntimeException(YtDlpFailureClassifier.classify(fullOutput)
+                    + "\n\n原始摘要：yt-dlp exited with code " + exitCode + ": " + outputTail);
+        }
+        progressCallback.accept(80);
+    }
+
+    private void readProcessOutput(Process process, List<String> outputLines, Consumer<Integer> progressCallback) {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 outputLines.add(line);
-                
-                if (line.contains(AppConstants.YtDlp.DOWNLOAD_MARK) && line.contains(AppConstants.YtDlp.PERCENT_MARK)) {
-                    try {
-                        String[] parts = line.split("\\s+");
-                        for (String part : parts) {
-                            if (part.endsWith(AppConstants.YtDlp.PERCENT_MARK)) {
-                                String percentStr = part.substring(0, part.length() - 1);
-                                double percent = Double.parseDouble(percentStr);
-                                progressCallback.accept((int) percent);
-                                break;
-                            }
-                        }
-                    } catch (Exception e) {
-                        // Ignore parsing errors
+                parseProgress(line, progressCallback);
+            }
+        } catch (IOException e) {
+            log.debug("Failed reading yt-dlp output: {}", e.getMessage());
+        }
+    }
+
+    private void parseProgress(String line, Consumer<Integer> progressCallback) {
+        if (progressCallback == null || line == null) {
+            return;
+        }
+        if (line.contains(AppConstants.YtDlp.DOWNLOAD_MARK) && line.contains(AppConstants.YtDlp.PERCENT_MARK)) {
+            try {
+                String[] parts = line.split("\\s+");
+                for (String part : parts) {
+                    if (part.endsWith(AppConstants.YtDlp.PERCENT_MARK)) {
+                        String percentStr = part.substring(0, part.length() - 1);
+                        double percent = Double.parseDouble(percentStr);
+                        progressCallback.accept((int) percent);
+                        break;
                     }
                 }
+            } catch (Exception e) {
+                // Ignore progress parsing errors.
             }
         }
+    }
 
-        boolean finished = process.waitFor(10, TimeUnit.MINUTES);
-        if (!finished) {
-            process.destroyForcibly();
-            throw new RuntimeException("yt-dlp timed out");
+    private List<String> buildFormatFallbacks() {
+        if (ffmpegAvailable) {
+            return Arrays.asList(
+                    AppConstants.YtDlp.FORMAT_BEST_MERGE_MP4,
+                    AppConstants.YtDlp.FORMAT_PROGRESSIVE_MP4,
+                    AppConstants.YtDlp.FORMAT_ANY
+            );
         }
-        
-        int exitCode = process.exitValue();
-        if (exitCode != 0) {
-            String fullOutput = String.join("\n", outputLines);
-            log.error("yt-dlp failed. Output:\n{}", fullOutput);
-            throw new RuntimeException("yt-dlp exited with code " + exitCode + ". See logs for output.");
+
+        return Arrays.asList(
+                AppConstants.YtDlp.FORMAT_PROGRESSIVE_MP4,
+                "best[height<=720]/best",
+                "worst[ext=mp4]/worst"
+        );
+    }
+
+    private void addCookieArgs(List<String> command) {
+        if (cookiesPath != null && !cookiesPath.isBlank()) {
+            Path path = Paths.get(cookiesPath.trim());
+            if (Files.exists(path) && Files.isRegularFile(path)) {
+                command.add("--cookies");
+                command.add(path.toAbsolutePath().toString());
+                return;
+            }
+            log.warn("Configured yt-dlp cookies file does not exist: {}", cookiesPath);
         }
-        progressCallback.accept(80);
+
+        if (cookiesFromBrowser != null && !cookiesFromBrowser.isBlank()) {
+            command.add("--cookies-from-browser");
+            command.add(cookiesFromBrowser.trim());
+        }
+    }
+
+    private boolean isCookieSourceConfigured() {
+        return (cookiesPath != null && !cookiesPath.isBlank() && Files.exists(Paths.get(cookiesPath.trim())))
+                || (cookiesFromBrowser != null && !cookiesFromBrowser.isBlank());
+    }
+
+    private String describeCookieSource() {
+        if (cookiesPath != null && !cookiesPath.isBlank() && Files.exists(Paths.get(cookiesPath.trim()))) {
+            return "cookies.txt";
+        }
+        if (cookiesFromBrowser != null && !cookiesFromBrowser.isBlank()) {
+            return "browser:" + cookiesFromBrowser.trim();
+        }
+        return "none";
+    }
+
+    private String buildSubtitleLanguages(String sourceLang, String targetLang) {
+        List<String> languages = new ArrayList<>();
+        addLanguageVariants(languages, sourceLang);
+        addLanguageVariants(languages, targetLang);
+        for (String lang : AppConstants.YtDlp.DEFAULT_SUB_LANGS.split(",")) {
+            addLanguageVariants(languages, lang);
+        }
+        return String.join(",", languages);
+    }
+
+    private void addLanguageVariants(List<String> languages, String lang) {
+        if (lang == null || lang.isBlank()) {
+            return;
+        }
+        String normalized = lang.trim();
+        addUnique(languages, normalized);
+        String lower = normalized.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("zh")) {
+            addUnique(languages, "zh");
+            addUnique(languages, "zh-CN");
+            addUnique(languages, "zh-Hans");
+            addUnique(languages, "zh-Hant");
+        } else if (lower.contains("-")) {
+            addUnique(languages, lower.substring(0, lower.indexOf('-')));
+        }
+    }
+
+    private void addUnique(List<String> values, String value) {
+        if (value != null && !value.isBlank() && values.stream().noneMatch(existing -> existing.equalsIgnoreCase(value))) {
+            values.add(value);
+        }
+    }
+
+    private String tail(List<String> lines, int maxLines) {
+        if (lines == null || lines.isEmpty()) {
+            return "";
+        }
+        synchronized (lines) {
+            int from = Math.max(0, lines.size() - Math.max(1, maxLines));
+            return String.join("\n", lines.subList(from, lines.size()));
+        }
     }
 
     private String resolveYtDlpPath() {
@@ -251,6 +472,100 @@ public class YtDlpClient {
         return null;
     }
 
+    private String resolveFfmpegPath() {
+        List<String> candidates = new ArrayList<>();
+
+        if (ffmpegPath != null && !ffmpegPath.trim().isEmpty()) {
+            candidates.add(ffmpegPath.trim());
+        }
+
+        String toolsPath = findToolsFfmpegPath();
+        if (toolsPath != null) {
+            candidates.add(toolsPath);
+        }
+
+        boolean isWindows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        candidates.addAll(isWindows ? Arrays.asList("ffmpeg.exe", "ffmpeg") : Arrays.asList("ffmpeg", "ffmpeg.exe"));
+
+        for (String candidate : candidates) {
+            if (tryGetFfmpegVersion(candidate) != null) {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private String findToolsFfmpegPath() {
+        try {
+            Path root = findProjectRoot();
+            if (root == null) {
+                return null;
+            }
+
+            List<Path> directCandidates = Arrays.asList(
+                    root.resolve(".tools").resolve("ffmpeg").resolve("bin").resolve("ffmpeg.exe"),
+                    root.resolve(".tools").resolve("ffmpeg.exe")
+            );
+
+            for (Path candidate : directCandidates) {
+                if (Files.exists(candidate) && Files.isRegularFile(candidate)) {
+                    return candidate.toAbsolutePath().toString();
+                }
+            }
+
+            Path toolsDir = root.resolve(".tools");
+            if (!Files.exists(toolsDir)) {
+                return null;
+            }
+
+            try (var paths = Files.find(toolsDir, 5, (path, attrs) ->
+                    attrs.isRegularFile() && "ffmpeg.exe".equalsIgnoreCase(path.getFileName().toString()))) {
+                return paths
+                        .sorted(Comparator.comparing(path -> path.toAbsolutePath().toString()))
+                        .map(path -> path.toAbsolutePath().toString())
+                        .findFirst()
+                        .orElse(null);
+            }
+        } catch (Exception e) {
+            log.debug("Error finding project ffmpeg: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private Path findProjectRoot() {
+        String currentDir = System.getProperty("user.dir");
+        if (currentDir == null || currentDir.isBlank()) {
+            return null;
+        }
+
+        Path searchPath = Paths.get(currentDir);
+        for (int i = 0; i < 6 && searchPath != null; i++) {
+            if (Files.exists(searchPath.resolve("backend")) || Files.exists(searchPath.resolve("frontend"))) {
+                return searchPath;
+            }
+            searchPath = searchPath.getParent();
+        }
+        return null;
+    }
+
+    private String resolveFfmpegLocation() {
+        if (resolvedFfmpegPath == null) {
+            return "";
+        }
+
+        try {
+            Path path = Paths.get(resolvedFfmpegPath);
+            if (Files.isRegularFile(path) && path.getParent() != null) {
+                return path.getParent().toAbsolutePath().toString();
+            }
+        } catch (Exception e) {
+            log.debug("Failed to resolve ffmpeg location from {}: {}", resolvedFfmpegPath, e.getMessage());
+        }
+
+        return resolvedFfmpegPath;
+    }
+
     private String tryGetVersion(String command) {
         if (command == null || command.trim().isEmpty()) {
             return null;
@@ -269,4 +584,35 @@ public class YtDlpClient {
         }
         return null;
     }
+
+    private String tryGetFfmpegVersion(String command) {
+        if (command == null || command.trim().isEmpty()) {
+            return null;
+        }
+
+        try {
+            Process process = new ProcessBuilder(command, "-version").start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String version = reader.readLine();
+                if (version != null && !version.isEmpty()) {
+                    return version;
+                }
+            }
+        } catch (Exception e) {
+            // Ignore and try next candidate
+        }
+        return null;
+    }
+
+    public record DownloadDiagnostics(
+            String ytDlpPath,
+            String ytDlpVersion,
+            String ffmpegPath,
+            boolean ffmpegAvailable,
+            boolean cookiesConfigured,
+            String cookieSource,
+            boolean forceIpv4,
+            long timeoutMinutes,
+            List<String> formatFallbacks
+    ) {}
 }

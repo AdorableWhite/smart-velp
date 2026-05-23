@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
-import { testTranslationProfile } from '../../services/api/media';
+import { fetchTranslationHealth, testTranslationProfile } from '../../services/api/media';
 import {
   deleteTranslationProfile,
   listTranslationProfiles,
@@ -13,9 +13,17 @@ import {
   type TranslationServicePreset
 } from '../../services/storage/translationServiceCatalog';
 import { usePreferencesStore } from '../../store/usePreferencesStore';
-import type { TranslationProfile, TranslationProvider, TranslationServiceTier } from '../../types/media';
+import type {
+  TranslationProfile,
+  TranslationProvider,
+  TranslationProviderHealth,
+  TranslationServiceTier
+} from '../../types/media';
 
-type TestState = Record<string, { status: 'testing' | 'ok' | 'failed'; message: string; elapsedMs?: number }>;
+type TestState = Record<
+  string,
+  { status: 'testing' | 'ok' | 'failed'; message: string; elapsedMs?: number; providerChain?: string[] }
+>;
 
 type ServiceDraft = {
   id?: string;
@@ -117,6 +125,7 @@ export function ProfileManager() {
   const [draft, setDraft] = useState<ServiceDraft>(() => draftFromPreset(translationServiceCatalog[0]));
   const [loading, setLoading] = useState(true);
   const [testState, setTestState] = useState<TestState>({});
+  const [providerHealth, setProviderHealth] = useState<Record<string, TranslationProviderHealth>>({});
   const sourceLang = usePreferencesStore((state) => state.sourceLang);
   const targetLang = usePreferencesStore((state) => state.targetLang);
   const selectedProfileId = usePreferencesStore((state) => state.selectedProfileId);
@@ -132,6 +141,7 @@ export function ProfileManager() {
 
   useEffect(() => {
     void reload();
+    void fetchTranslationHealth().then((health) => setProviderHealth(health ?? {})).catch(() => setProviderHealth({}));
   }, []);
 
   const activeProfile = useMemo(
@@ -176,8 +186,16 @@ export function ProfileManager() {
   const testKey = draft.id ?? 'draft';
   const currentTestState = testState[testKey];
   const providerLabel = providerLabels[draft.provider] ?? draft.provider;
+  const currentProviderHealth = providerHealth[draft.provider];
   const canEditEndpoint = draft.provider !== 'free';
   const canEditApiKey = draft.requiresApiKey && draft.provider !== 'free';
+  const healthSummary = currentProviderHealth
+    ? currentProviderHealth.circuitOpen
+      ? '当前处于冷却中'
+      : currentProviderHealth.consecutiveFailures > 0
+        ? `连续失败 ${currentProviderHealth.consecutiveFailures} 次`
+        : '近期可用'
+    : '尚未检测';
 
   const onSelectPreset = (preset: TranslationServicePreset) => {
     const saved = savedByService.get(serviceKey(preset.provider, preset.baseUrl, preset.model));
@@ -256,12 +274,14 @@ export function ProfileManager() {
         sourceLang,
         targetLang
       });
+      setProviderHealth(result.providerHealth ?? {});
       setTestState((current) => ({
         ...current,
         [testKey]: {
           status: result.ok ? 'ok' : 'failed',
           message: result.ok ? `检测通过：${result.translatedText || result.message}` : result.message || '检测失败',
-          elapsedMs: result.elapsedMs
+          elapsedMs: result.elapsedMs,
+          providerChain: result.providerChain
         }
       }));
     } catch (error) {
@@ -272,6 +292,7 @@ export function ProfileManager() {
           message: error instanceof Error ? error.message : '检测失败'
         }
       }));
+      void fetchTranslationHealth().then((health) => setProviderHealth(health ?? {})).catch(() => undefined);
     }
   };
 
@@ -281,7 +302,7 @@ export function ProfileManager() {
         <div>
           <p className="eyebrow">翻译服务</p>
           <h3>翻译服务列表</h3>
-          <p className="subtle-text">左侧选择服务，右侧只编辑该服务需要的配置。免填 Key 不等于永久免费，是否可用以连通性检测为准。</p>
+          <p className="subtle-text">左侧选择服务，右侧只编辑当前服务需要的配置。免填 Key 不等于永久免费，实际可用性以连通性检测为准。</p>
         </div>
       </div>
 
@@ -357,11 +378,20 @@ export function ProfileManager() {
             </div>
 
             {currentTestState ? (
-              <p className={`test-result full-width ${currentTestState.status}`}>
-                {currentTestState.message}
-                {currentTestState.elapsedMs ? ` · ${currentTestState.elapsedMs}ms` : ''}
-              </p>
+              <div className={`test-result full-width ${currentTestState.status}`}>
+                <strong>{currentTestState.message}</strong>
+                <span>
+                  {currentTestState.providerChain?.length ? `链路：${currentTestState.providerChain.join(' > ')}` : '链路：当前服务'}
+                  {currentTestState.elapsedMs ? ` · ${currentTestState.elapsedMs}ms` : ''}
+                </span>
+              </div>
             ) : null}
+
+            <div className="service-health-strip full-width">
+              <span>当前服务：{providerLabel}</span>
+              <span>健康状态：{healthSummary}</span>
+              <span>{draft.requiresApiKey ? '需要用户 API Key' : '免填 Key，依赖服务端额度'}</span>
+            </div>
 
             <label className="field">
               <span>服务名称</span>
@@ -370,7 +400,7 @@ export function ProfileManager() {
 
             <div className="field">
               <span>服务类型</span>
-              <div className="readonly-field">{providerLabel} · {tierLabels[draft.tier]}</div>
+              <div className="readonly-field">{providerLabel} / {tierLabels[draft.tier]}</div>
             </div>
 
             <label className="field">

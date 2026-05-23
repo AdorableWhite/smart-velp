@@ -9,6 +9,7 @@ import com.velp.interfaces.rest.dto.CourseDetailResponse;
 import com.velp.interfaces.rest.dto.LocalSubtitleAnalyzeRequest;
 import com.velp.interfaces.rest.dto.ParserStatusResponse;
 import com.velp.interfaces.rest.dto.TaskResponse;
+import com.velp.infrastructure.external.YtDlpClient;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -17,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.File;
+import java.net.URLConnection;
 import java.util.List;
 
 @RestController
@@ -24,9 +26,11 @@ import java.util.List;
 public class MediaController {
 
     private final MediaApplicationService mediaApplicationService;
+    private final YtDlpClient ytDlpClient;
 
-    public MediaController(MediaApplicationService mediaApplicationService) {
+    public MediaController(MediaApplicationService mediaApplicationService, YtDlpClient ytDlpClient) {
         this.mediaApplicationService = mediaApplicationService;
+        this.ytDlpClient = ytDlpClient;
     }
 
     @PostMapping("/parser/analyze")
@@ -56,7 +60,9 @@ public class MediaController {
                 status.status(),
                 status.progress(),
                 status.videoId(),
+                visibleError(status.status(), status.error()),
                 status.error(),
+                status.url(),
                 status.title(),
                 status.sourceLang(),
                 status.targetLang()
@@ -65,7 +71,27 @@ public class MediaController {
 
     @GetMapping("/parser/tasks")
     public List<MediaRepository.TaskEntry> getAllTasks() {
-        return mediaApplicationService.getAllTasks();
+        return mediaApplicationService.getAllTasks().stream()
+                .map(task -> new MediaRepository.TaskEntry(
+                        task.taskId(),
+                        task.status(),
+                        task.progress(),
+                        task.videoId(),
+                        visibleError(task.status(), task.error()),
+                        task.url(),
+                        task.title(),
+                        task.sourceLang(),
+                        task.targetLang(),
+                        task.createdAt(),
+                        task.assetAvailable(),
+                        task.assetMessage()
+                ))
+                .toList();
+    }
+
+    @GetMapping("/parser/download-diagnostics")
+    public YtDlpClient.DownloadDiagnostics getDownloadDiagnostics() {
+        return ytDlpClient.getDiagnostics();
     }
 
     @DeleteMapping("/parser/tasks/{taskId}")
@@ -100,8 +126,29 @@ public class MediaController {
         String filename = videoFile.getName();
         
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType("video/mp4"))
+                .contentType(resolveMediaType(videoFile))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                 .body(resource);
+    }
+
+    private MediaType resolveMediaType(File file) {
+        String contentType = URLConnection.guessContentTypeFromName(file.getName());
+        if (contentType == null || contentType.isBlank()) {
+            String lower = file.getName().toLowerCase();
+            if (lower.endsWith(".webm")) {
+                contentType = "video/webm";
+            } else if (lower.endsWith(".mkv")) {
+                contentType = "video/x-matroska";
+            } else if (lower.endsWith(".m4v")) {
+                contentType = "video/x-m4v";
+            } else {
+                contentType = "video/mp4";
+            }
+        }
+        return MediaType.parseMediaType(contentType);
+    }
+
+    private String visibleError(String status, String error) {
+        return AppConstants.TaskStatus.FAILED.equals(status) ? error : null;
     }
 }

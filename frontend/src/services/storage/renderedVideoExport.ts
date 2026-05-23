@@ -7,6 +7,8 @@ interface RenderedVideoExportOptions {
   subtitles: DisplaySubtitle[];
   subtitleMode: SubtitleMode;
   fontSize: number;
+  playbackRate?: number;
+  signal?: AbortSignal;
   onProgress?: (progress: number) => void;
 }
 
@@ -23,6 +25,16 @@ function pickMimeType() {
 
 function extensionForMimeType(mimeType: string) {
   return mimeType.includes('mp4') ? 'mp4' : 'webm';
+}
+
+function abortError() {
+  return new DOMException('导出已取消', 'AbortError');
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw abortError();
+  }
 }
 
 function visibleSubtitle(mode: SubtitleMode, subtitle?: DisplaySubtitle) {
@@ -145,6 +157,31 @@ async function waitForMetadata(video: HTMLVideoElement) {
   });
 }
 
+async function waitForPlaybackEnd(video: HTMLVideoElement, signal?: AbortSignal) {
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      video.onended = null;
+      video.onerror = null;
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(abortError());
+    };
+
+    video.onended = () => {
+      cleanup();
+      resolve();
+    };
+    video.onerror = () => {
+      cleanup();
+      reject(new Error('视频播放失败，无法完成字幕版导出'));
+    };
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 async function createAudioStream(video: HTMLVideoElement) {
   const AudioContextCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioContextCtor) {
@@ -170,6 +207,8 @@ async function createAudioStream(video: HTMLVideoElement) {
 }
 
 export async function exportRenderedVideo(options: RenderedVideoExportOptions) {
+  throwIfAborted(options.signal);
+
   if (!('MediaRecorder' in window)) {
     throw new Error('当前浏览器不支持视频渲染导出');
   }
@@ -184,10 +223,11 @@ export async function exportRenderedVideo(options: RenderedVideoExportOptions) {
   sourceVideo.src = options.videoSrc;
   sourceVideo.playsInline = true;
   sourceVideo.preload = 'auto';
-  sourceVideo.playbackRate = 1;
+  sourceVideo.playbackRate = Math.max(0.25, Math.min(options.playbackRate ?? 1, 4));
   sourceVideo.muted = false;
 
   await waitForMetadata(sourceVideo);
+  throwIfAborted(options.signal);
   if (!Number.isFinite(sourceVideo.duration) || sourceVideo.duration <= 0) {
     throw new Error('视频时长不可用，无法渲染导出');
   }
@@ -208,6 +248,8 @@ export async function exportRenderedVideo(options: RenderedVideoExportOptions) {
   ]);
   const recorder = new MediaRecorder(outputStream, { mimeType });
   const chunks: BlobPart[] = [];
+  let wasCancelled = false;
+  let abortHandler: (() => void) | undefined;
 
   const finished = new Promise<Blob>((resolve, reject) => {
     recorder.ondataavailable = (event) => {
@@ -216,7 +258,24 @@ export async function exportRenderedVideo(options: RenderedVideoExportOptions) {
       }
     };
     recorder.onerror = () => reject(new Error('视频录制失败'));
-    recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }));
+    recorder.onstop = () => {
+      if (wasCancelled) {
+        reject(abortError());
+        return;
+      }
+      resolve(new Blob(chunks, { type: mimeType }));
+    };
+
+    abortHandler = () => {
+      wasCancelled = true;
+      sourceVideo.pause();
+      if (recorder.state !== 'inactive') {
+        recorder.stop();
+      } else {
+        reject(abortError());
+      }
+    };
+    options.signal?.addEventListener('abort', abortHandler, { once: true });
   });
 
   let animationFrame = 0;
@@ -239,13 +298,12 @@ export async function exportRenderedVideo(options: RenderedVideoExportOptions) {
 
   try {
     sourceVideo.currentTime = 0;
+    throwIfAborted(options.signal);
     recorder.start(1000);
     await sourceVideo.play();
     drawFrame();
 
-    await new Promise<void>((resolve) => {
-      sourceVideo.onended = () => resolve();
-    });
+    await waitForPlaybackEnd(sourceVideo, options.signal);
 
     if (recorder.state === 'recording') {
       recorder.stop();
@@ -256,7 +314,20 @@ export async function exportRenderedVideo(options: RenderedVideoExportOptions) {
     const extension = extensionForMimeType(mimeType);
     const fileName = options.fileName.replace(/\.[^.]+$/, '') + `-字幕版.${extension}`;
     await saveBlobToDevice(blob, fileName, mimeType);
+  } catch (error) {
+    if (recorder.state !== 'inactive') {
+      recorder.stop();
+    }
+    try {
+      await finished;
+    } catch {
+      // The original error is more useful to the caller than the recorder shutdown result.
+    }
+    throw error;
   } finally {
+    if (abortHandler) {
+      options.signal?.removeEventListener('abort', abortHandler);
+    }
     if (animationFrame) {
       cancelAnimationFrame(animationFrame);
     }

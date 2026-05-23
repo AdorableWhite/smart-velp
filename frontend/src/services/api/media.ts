@@ -1,8 +1,10 @@
 import type {
   AnalyzeRequest,
   CourseDetailResponse,
+  DownloadDiagnostics,
   ParserStatusResponse,
   TranslationProfilePayload,
+  TranslationTestResponse,
   TaskResponse,
   TaskSummary
 } from '../../types/media';
@@ -11,6 +13,10 @@ import { API_BASE, buildAbsoluteUrl, requestJson } from './http';
 export async function fetchTasks() {
   const tasks = await requestJson<TaskSummary[]>('/api/parser/tasks');
   return [...tasks].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+export function fetchDownloadDiagnostics() {
+  return requestJson<DownloadDiagnostics>('/api/parser/download-diagnostics');
 }
 
 export function submitAnalyze(request: AnalyzeRequest) {
@@ -82,14 +88,13 @@ export function buildDownloadUrl(videoId: string) {
 }
 
 export function testTranslationProfile(request: TranslationProfilePayload & { sourceLang?: string; targetLang?: string }) {
-  return requestJson<{
-    ok: boolean;
-    message: string;
-    translatedText: string;
-    elapsedMs: number;
-  }>('/api/translation/test', {
+  return requestJson<TranslationTestResponse>('/api/translation/test', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request)
   });
+}
+
+export function fetchTranslationHealth() {
+  return requestJson<TranslationTestResponse['providerHealth']>('/api/translation/health');
 }

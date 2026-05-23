@@ -11,6 +11,7 @@ tar_path="$repo_root/$maven_base-bin.tar.gz"
 download_url="https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/$maven_version/$maven_base-bin.tar.gz"
 yt_dlp_url="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"
 yt_dlp_path="$tools_dir/yt-dlp"
+ffmpeg_path="$tools_dir/ffmpeg/bin/ffmpeg"
 
 resolve_maven_cmd() {
   if command -v mvn >/dev/null 2>&1; then
@@ -81,6 +82,12 @@ else
     chmod +x "$yt_dlp_path"
   fi
   export VELP_YTDLP_PATH="$yt_dlp_path"
+fi
+
+if command -v ffmpeg >/dev/null 2>&1; then
+  export VELP_FFMPEG_PATH="$(command -v ffmpeg)"
+elif [ -x "$ffmpeg_path" ]; then
+  export VELP_FFMPEG_PATH="$ffmpeg_path"
 fi
 
 cd "$backend_dir"

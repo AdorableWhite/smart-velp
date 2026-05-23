@@ -10,6 +10,9 @@ $zipPath = Join-Path $toolsDir "$mavenBase-bin.zip"
 $mavenUrl = "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/$mavenVersion/$mavenBase-bin.zip"
 $ytDlpUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
 $ytDlpPath = Join-Path $toolsDir "yt-dlp.exe"
+$ffmpegUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+$ffmpegZipPath = Join-Path $toolsDir "ffmpeg-release-essentials.zip"
+$ffmpegDir = Join-Path $toolsDir "ffmpeg"
 
 function Resolve-MavenCmd {
     $mvn = Get-Command mvn -ErrorAction SilentlyContinue
@@ -56,6 +59,45 @@ function Resolve-MavenCmd {
     return $mvnCmd
 }
 
+function Find-ProjectFfmpeg {
+    $direct = Join-Path $ffmpegDir "bin\ffmpeg.exe"
+    if (Test-Path $direct) {
+        return (Resolve-Path $direct).Path
+    }
+
+    if (Test-Path $toolsDir) {
+        $candidate = Get-ChildItem -Path $toolsDir -Recurse -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($candidate) {
+            return $candidate.FullName
+        }
+    }
+
+    return $null
+}
+
+function Resolve-FfmpegCmd {
+    $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+    if ($ffmpeg) {
+        return $ffmpeg.Path
+    }
+
+    $projectFfmpeg = Find-ProjectFfmpeg
+    if ($projectFfmpeg) {
+        return $projectFfmpeg
+    }
+
+    try {
+        New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null
+        Invoke-WebRequest -Uri $ffmpegUrl -OutFile $ffmpegZipPath -TimeoutSec 240
+        Expand-Archive -Path $ffmpegZipPath -DestinationPath $ffmpegDir -Force
+        return Find-ProjectFfmpeg
+    } catch {
+        Write-Warning "ffmpeg was not found and automatic download failed: $($_.Exception.Message). The backend will fall back to progressive MP4 downloads."
+        return $null
+    }
+}
+
 $ytDlpCmd = $null
 $ytDlp = Get-Command yt-dlp -ErrorAction SilentlyContinue
 if ($ytDlp) {
@@ -69,9 +111,13 @@ if ($ytDlp) {
 }
 
 $mvnCmd = Resolve-MavenCmd
+$ffmpegCmd = Resolve-FfmpegCmd
 Push-Location $backendDir
 try {
     $env:VELP_YTDLP_PATH = $ytDlpCmd
+    if ($ffmpegCmd) {
+        $env:VELP_FFMPEG_PATH = $ffmpegCmd
+    }
     & $mvnCmd clean spring-boot:run
 } finally {
     Pop-Location

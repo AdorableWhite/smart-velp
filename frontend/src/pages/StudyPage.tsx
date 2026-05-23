@@ -5,6 +5,7 @@ import { PlayerPanel } from '../components/player/PlayerPanel';
 import {
   fetchCourseDetail,
   fetchTaskStatus,
+  submitAnalyze,
   submitCourseRetranslate,
   submitLocalSubtitleAnalyze
 } from '../services/api/media';
@@ -68,6 +69,34 @@ export function StudyPage() {
       return submitCourseRetranslate(videoId, {
         sourceLang,
         targetLang,
+        translationProfile: selectedProfile
+          ? {
+              provider: selectedProfile.provider,
+              baseUrl: selectedProfile.baseUrl,
+              model: selectedProfile.model,
+              apiKey: selectedProfile.apiKey,
+              prompt: selectedProfile.prompt
+            }
+          : undefined
+      });
+    },
+    onSuccess: (result) => {
+      navigate(`/study/backend/${result.taskId}`);
+    }
+  });
+
+  const retryBackendTaskMutation = useMutation({
+    mutationFn: async () => {
+      const task = taskStatusQuery.data;
+      if (!task?.url) {
+        throw new Error('Missing task URL');
+      }
+
+      const selectedProfile = await getPreferredTranslationProfile(selectedProfileId);
+      return submitAnalyze({
+        url: task.url,
+        sourceLang: task.sourceLang ?? sourceLang,
+        targetLang: task.targetLang ?? targetLang,
         translationProfile: selectedProfile
           ? {
               provider: selectedProfile.provider,
@@ -186,17 +215,67 @@ export function StudyPage() {
           <div className="progress-strip large">
             <span style={{ width: `${taskStatusQuery.data?.progress ?? 12}%` }} />
           </div>
-          <p className="subtle-text">当前进度 {taskStatusQuery.data?.progress ?? 0}%</p>
+          <p className="subtle-text">{taskStatusQuery.data?.message ?? `当前进度 ${taskStatusQuery.data?.progress ?? 0}%`}</p>
         </section>
       );
     }
 
     if (taskStatusQuery.data?.status === 'failed') {
+      const failedTask = taskStatusQuery.data;
+      const canRetryBackendTask = Boolean(
+        failedTask.url && !failedTask.url.startsWith('local://') && !failedTask.url.startsWith('course://')
+      );
+
       return (
         <section className="card status-card">
           <p className="eyebrow">处理失败</p>
           <h2>这次任务还没准备好</h2>
-          <p className="subtle-text">{taskStatusQuery.data.error ?? '请稍后重试。'}</p>
+          <p className="subtle-text">{failedTask.error ?? '请稍后重试。'}</p>
+          <div className="inline-actions status-actions">
+            {canRetryBackendTask ? (
+              <button
+                type="button"
+                className="primary-button"
+                disabled={retryBackendTaskMutation.isPending}
+                onClick={() => retryBackendTaskMutation.mutate()}
+              >
+                {retryBackendTaskMutation.isPending ? '正在重新提交...' : '重新提交'}
+              </button>
+            ) : null}
+            <button type="button" className="secondary-button" onClick={() => navigate('/library')}>
+              回资料库
+            </button>
+          </div>
+        </section>
+      );
+    }
+
+    if (courseQuery.isError) {
+      const failedTask = taskStatusQuery.data;
+      const canRetryBackendTask = Boolean(
+        failedTask?.url && !failedTask.url.startsWith('local://') && !failedTask.url.startsWith('course://')
+      );
+
+      return (
+        <section className="card status-card">
+          <p className="eyebrow">课程资源不可用</p>
+          <h2>这节课需要重新准备</h2>
+          <p className="subtle-text">{courseQuery.error instanceof Error ? courseQuery.error.message : '课程文件无法读取。'}</p>
+          <div className="inline-actions status-actions">
+            {canRetryBackendTask ? (
+              <button
+                type="button"
+                className="primary-button"
+                disabled={retryBackendTaskMutation.isPending}
+                onClick={() => retryBackendTaskMutation.mutate()}
+              >
+                {retryBackendTaskMutation.isPending ? '正在重新提交...' : '重新提交'}
+              </button>
+            ) : null}
+            <button type="button" className="secondary-button" onClick={() => navigate('/library')}>
+              回资料库
+            </button>
+          </div>
         </section>
       );
     }

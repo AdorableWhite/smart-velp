@@ -11,5 +11,9 @@ public interface MediaRepository {
     List<TaskEntry> getAllTasks();
     
     record TaskStatus(String status, int progress, String videoId, String error, String url, String title, String sourceLang, String targetLang, long createdAt) {}
-    record TaskEntry(String taskId, String status, int progress, String videoId, String url, String title, String sourceLang, String targetLang, long createdAt) {}
+    record TaskEntry(String taskId, String status, int progress, String videoId, String error, String url, String title, String sourceLang, String targetLang, long createdAt, Boolean assetAvailable, String assetMessage) {
+        public TaskEntry(String taskId, String status, int progress, String videoId, String error, String url, String title, String sourceLang, String targetLang, long createdAt) {
+            this(taskId, status, progress, videoId, error, url, title, sourceLang, targetLang, createdAt, null, null);
+        }
+    }
 }

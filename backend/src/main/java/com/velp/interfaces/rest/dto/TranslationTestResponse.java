@@ -12,4 +12,6 @@ public class TranslationTestResponse {
     private String message;
     private String translatedText;
     private long elapsedMs;
+    private java.util.List<String> providerChain;
+    private java.util.Map<String, ?> providerHealth;
 }

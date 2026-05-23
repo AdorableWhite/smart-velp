@@ -81,7 +81,7 @@ public class DeepSeekTranslationService implements TranslationService {
                 progressCallback.accept(100);
             }
         } catch (Exception e) {
-            log.error("DeepSeek translation failed", e);
+            log.warn("DeepSeek translation failed: {}", e.getMessage());
             throw new RuntimeException("DeepSeek Translation error: " + e.getMessage());
         }
     }
